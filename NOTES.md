@@ -9,6 +9,9 @@
   遇到「教程那样写，但现代 Rust 不这样写」时，要主动用现代写法并说明理由。依据：
   Apollo《Rust Best Practices》、Rust API Guidelines。课程风格速查见
   `reference/modern-rust-idioms.html`。
+- **架构要求：要现代 Rust 的多文件结构，不要单文件写完。** 目标结构与拆分时机见
+  `reference/architecture.html`。原则：按「接缝 / 深模块」拆，不按行数；每刀是「行为不变的搬家」，
+  先搬家、后加功能。
 
 ## 已确立的判断
 
@@ -19,5 +22,6 @@
 
 ## 待办 / 后续钩子
 
-- 第 2 课：`EnterAlternateScreen` + 画文件内容 + 请求窗口大小 + `Drop` 守卫自动恢复终端。
-- 数据模型后期会从「Vec<String>」演进成 `Row` 结构，这是借用冲突集中爆发的地方，提前铺垫。
+- **第 4 课（下一步）：拆出 `tui.rs` + `lib.rs`**（行为不变的搬家），之后再上光标与滚动。
+- 数据模型从 `Vec<String>` 演进成 `Document` + `Row`，这里是借用冲突集中爆发处，提前铺垫。
+- 完整目标结构与拆分路线图见 `reference/architecture.html`。

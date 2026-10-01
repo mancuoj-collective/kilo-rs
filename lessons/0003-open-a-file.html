@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 3 课 · 打开一个文件</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>第 3 课 · 打开一个文件</h1>
+<p class="lesson-meta">kilo-rs 课程 · Lesson 0003 · 预计 30–40 分钟 · 需要动手写代码</p>
+
+<p class="lede">前两课我们造好了画布，但画布上只有 <code>~</code>。这一课让编辑器真正<strong>打开文件</strong>：
+从命令行拿到路径、读进内存、渲染到屏幕上。你的<strong>第一个数据结构</strong>要登场了。</p>
+
+<div class="win">
+<p><span class="tag">本课成果</span></p>
+<ul>
+<li><code>cargo run -- README.md</code>：文件内容铺满画布，空行用 <code>~</code> 补满；</li>
+<li><code>cargo run</code>（不带参数）：回到欢迎语画面；</li>
+<li>文件名写错：得到一个<strong>排版干净的报错</strong>，终端毫发无损；</li>
+<li>窗口大小改变，内容按新尺寸重画。</li>
+</ul>
+</div>
+
+<h2>三个小知识</h2>
+
+<h3>① 命令行参数：<code>env::args()</code></h3>
+
+<p><code>std::env::args()</code> 返回一个迭代器，第 0 项是程序名，第 1 项就是你传的文件名。
+用 <code>.nth(1)</code> 拿到它（<code>Option&lt;String&gt;</code>）：</p>
+
+<pre><code>let path = std::env::args().nth(1);   // Some("README.md") 或 None</code></pre>
+
+<div class="callout">
+<p><span class="tag">注意</span> 用 <code>cargo run</code> 传参必须加 <code>--</code>：
+<code>cargo run -- README.md</code>。<code>--</code> 之前是给 cargo 的，之后才是给程序的。</p>
+</div>
+
+<h3>② 读文件：一行一个 <code>String</code></h3>
+
+<p>最直接的读法是 <code>fs::read_to_string</code>，一次读成整块 <code>String</code>，
+再用 <code>.lines()</code> 切开。<code>lines()</code> 会处理 <code>\n</code> 和 <code>\r\n</code>，并去掉行尾的换行符。</p>
+
+<div class="callout">
+<p><span class="tag">关键</span> <code>.lines()</code> 产出的是 <code>&amp;str</code>，<strong>借用</strong>自那块文件内容。
+所以要用 <code>.map(str::to_owned)</code> 把每一行变成<strong>独立拥有</strong>的 <code>String</code>——
+否则一旦文件内容那块内存被释放，这些行就成了悬垂借用。这一步正是所有权在起作用。</p>
+</div>
+
+<h3>③ 渲染：有内容就画，没有就画 <code>~</code></h3>
+
+<p>渲染函数现在接收一个 <code>&amp;[String]</code>：前几行是文件内容，超出文件行数的部分用 <code>~</code> 补满；
+文件如果为空，就显示欢迎语。</p>
+
+<div class="callout">
+<p><span class="tag">现代写法</span> 参数写成 <code>&amp;[String]</code> 而不是 <code>&amp;Vec&lt;String&gt;</code>。
+切片是更通用的类型：<code>Vec</code>、数组、以及切片本身都能自动传进来。<strong>函数尽量收窄到它真正需要的能力。</strong>
+（Apollo《Rust Best Practices》§1.1）</p>
+</div>
+
+<h2>动手</h2>
+
+<div class="task">
+<p><span class="tag">任务</span> 把 <code>src/main.rs</code> 改成下面的样子</p>
+<p>前两课的部分没变，重点看 <code>main</code>、<code>draw</code>、<code>truncate</code>：</p>
+<pre><code>use std::{
+    env,
+    fs,
+    io::{self, Write},
+};
+
+use color_eyre::Result;
+use crossterm::{
+    cursor::{self, MoveTo},
+    event::{self, Event, KeyCode, KeyModifiers},
+    execute, queue,
+    style::Print,
+    terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
+};
+
+const NAME: &amp;str = env!("CARGO_PKG_NAME");
+const VERSION: &amp;str = env!("CARGO_PKG_VERSION");
+
+/// 持有「全屏编辑」状态：raw mode + 备用屏幕 + 隐藏的光标。
+struct Terminal;
+
+impl Terminal {
+    fn enter() -&gt; io::Result&lt;Self&gt; {
+        terminal::enable_raw_mode()?;
+
+        // 先构造守卫，再执行可能失败的命令。
+        let guard = Self;
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
+
+        Ok(guard)
+    }
+}
+
+impl Drop for Terminal {
+    fn drop(&amp;mut self) {
+        restore();
+    }
+}
+
+fn restore() {
+    let mut stdout = io::stdout();
+    let _ = execute!(stdout, cursor::Show, LeaveAlternateScreen);
+    let _ = terminal::disable_raw_mode();
+}
+
+fn install_panic_hook() {
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        restore();
+        hook(info);
+    }));
+}
+
+fn main() -&gt; Result&lt;()&gt; {
+    color_eyre::install()?;
+    install_panic_hook();
+
+    // 读取命令行里的文件名；没有就开一个空 buffer
+    let lines = match env::args().nth(1) {
+        Some(path) =&gt; fs::read_to_string(&amp;path)?
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+        None =&gt; Vec::new(),
+    };
+
+    let _guard = Terminal::enter()?;
+    draw(&amp;lines)?;
+
+    loop {
+        match event::read()? {
+            Event::Key(key) if key.is_press() =&gt; match key.code {
+                KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) =&gt; break,
+                _ =&gt; {}
+            },
+            Event::Resize(_, _) =&gt; draw(&amp;lines)?,
+            _ =&gt; {}
+        }
+    }
+
+    Ok(())
+}
+
+/// 画一帧：文件的前若干行，其余用 `~` 补满；空文件显示欢迎语。
+fn draw(lines: &amp;[String]) -&gt; io::Result&lt;()&gt; {
+    let (cols, rows) = terminal::size()?;
+    let mut stdout = io::stdout();
+
+    queue!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
+
+    for y in 0..rows {
+        if let Some(line) = lines.get(y as usize) {
+            queue!(stdout, Print(truncate(line, cols)))?;
+        } else if lines.is_empty() &amp;&amp; y == rows / 3 {
+            queue!(stdout, Print(welcome_line(cols)))?;
+        } else {
+            queue!(stdout, Print('~'))?;
+        }
+
+        if y + 1 &lt; rows {
+            queue!(stdout, Print("\r\n"))?;
+        }
+    }
+
+    queue!(stdout, MoveTo(0, 0))?;
+    stdout.flush()
+}
+
+/// 把一段文字截断到终端宽度（按字符，不按字节）。
+fn truncate(text: &amp;str, width: u16) -&gt; String {
+    text.chars().take(width as usize).collect()
+}
+
+fn welcome_line(cols: u16) -&gt; String {
+    let text = format!("~ {NAME} editor -- version {VERSION}");
+    truncate(&amp;text, cols)
+}</code></pre>
+</div>
+
+<h2>逐段拆解</h2>
+
+<ul>
+<li><strong>读文件放在 <code>Terminal::enter()</code> 之前</strong>：这是刻意的。文件打开失败时，
+  <code>?</code> 会让 <code>main</code> 提前返回，此时<strong>还没进备用屏幕</strong>，
+  <code>color-eyre</code> 的报错能干干净净打在正常屏幕上。凡是「可能失败的准备工作」，
+  都安排在接管屏幕之前。</li>
+<li><code>fs::read_to_string(&amp;path)?</code>：一次读成整块 <code>String</code>。它要求文件是合法 UTF-8——
+  二进制文件会报错，这是本课的一个已知限制。</li>
+<li><code>.lines().map(str::to_owned).collect()</code>：切行、把每行 <code>&amp;str</code>
+  转成拥有的 <code>String</code>、收进 <code>Vec</code>。目标类型由后面 <code>draw(&amp;lines)</code> 的签名推导出来。</li>
+<li><code>match … { Some(path) =&gt; …, None =&gt; Vec::new() }</code>：有文件名就读，没有就一个空 <code>Vec</code>。
+  空 <code>Vec</code> 会让 <code>draw</code> 走欢迎语分支。</li>
+<li><code>lines.get(y as usize)</code>：<code>Vec</code> 的 <code>.get</code> 返回 <code>Option&lt;&amp;String&gt;</code>，
+  正好表达「这一行可能不存在」。不存在就走补 <code>~</code> 的分支。<code>y as usize</code> 是 u16 → usize 的安全加宽转换。</li>
+<li><code>truncate()</code>：从上一课的欢迎语里抽出来的。它现在被<strong>两处</strong>用到
+  （欢迎语、每一行文件内容），而且名字表意清楚，所以值得独立成函数。</li>
+<li><code>draw(&amp;lines)</code>：只<strong>借用</strong> <code>lines</code>，不拿走所有权。
+  <code>Resize</code> 分支可以反复重画，正是因为 <code>lines</code> 还归 <code>main</code> 所有。</li>
+</ul>
+
+<div class="task">
+<p><span class="tag">运行并观察</span></p>
+<pre><code>cargo run -- README.md
+cargo run -- kilo.c
+cargo run
+cargo run -- 不存在的文件.txt</code></pre>
+<ol>
+<li>文件内容铺满屏幕；底部多出来的行是 <code>~</code>。</li>
+<li>故意用一个<strong>很长的行</strong>（比如把窗口拖窄），看行被截断而不是换行、错位。</li>
+<li>不带参数 → 欢迎语。</li>
+<li>文件名写错 → 干净的错误报告（还在正常屏幕上）。</li>
+</ol>
+</div>
+
+<h2>已知限制（先记着，之后处理）</h2>
+
+<ul>
+<li><strong>只能显示前 <code>rows</code> 行</strong>：还不能滚动。下一步就做光标和滚动。</li>
+<li><strong>必须是合法 UTF-8</strong>：<code>read_to_string</code> 对二进制文件会报错。
+  原版 C kilo 是字节导向的，这里是个真实取舍——以后要当真编辑器用时再处理。</li>
+<li><strong>宽字符没处理</strong>：超长行按「字符数」截断，但中文占 2 列，还不精确。</li>
+</ul>
+
+<h2>小测</h2>
+
+<div class="quiz">
+<p class="q">1. <code>.lines()</code> 产出的每一行是什么类型？</p>
+<ul>
+<li><code>&amp;str</code>，借用自文件内容</li>
+<li><code>String</code>，每一行独立拥有</li>
+<li><code>Vec&lt;u8&gt;</code>，原始字节序列</li>
+<li><code>char</code>，一次一个字符</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。正因为是借用，我们才需要 <code>.map(str::to_owned)</code> 把它们变成拥有所有权的
+<code>String</code>——否则那块文件内容一旦释放，这些行就悬垂了。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">2. 为什么读文件要放在 <code>Terminal::enter()</code> 之前？</p>
+<ul>
+<li>出错时报告能干净地打在正常屏幕上</li>
+<li>否则文件内容会被备用屏幕吞掉</li>
+<li>因为 raw mode 下无法读取文件</li>
+<li>为了让程序编译得更快一些</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。失败发生在接管屏幕之前，<code>?</code> 提前返回时终端还是正常状态，报错清晰可读。
+把「可能失败的准备工作」放在侵入性操作之前，是终端程序的通用原则。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">3. <code>draw</code> 的参数为什么写成 <code>&amp;[String]</code> 而不是 <code>&amp;Vec&lt;String&gt;</code>？</p>
+<ul>
+<li>切片更通用，数组、Vec 都能传进来</li>
+<li>因为 <code>Vec</code> 不能被不可变借用</li>
+<li>因为切片会自动复制一份数据</li>
+<li>因为 <code>&amp;Vec</code> 会移动走所有权</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。切片 <code>&amp;[T]</code> 是更宽泛的「一段连续数据」；<code>&amp;Vec&lt;T&gt;</code> 会自动解引用成
+<code>&amp;[T]</code>，所以收 <code>&amp;[T]</code> 的接口能接受更多输入，也更少绑定实现细节。
+这是「函数参数尽量收窄」的典型例子。</p>
+</details>
+</div>
+
+<h2>主要资料</h2>
+
+<ul class="ref-list">
+<li><code>std::fs::read_to_string</code>：<a href="https://doc.rust-lang.org/std/fs/fn.read_to_string.html">标准库文档</a>。</li>
+<li><code>str::lines</code>：<a href="https://doc.rust-lang.org/std/primitive.str.html#method.lines">标准库文档</a>。</li>
+<li>对应章节：<a href="https://viewsourcecode.org/snaptoken/kilo/03.rawInputAndOutput.html">snaptoken 第 3 章</a>
+  （原版读文件的部分）、<a href="https://www.flenker.blog/hecto-chapter-4/">hecto 第 4 章</a>。</li>
+<li>速查：<a href="../reference/modern-rust-idioms.html">现代 Rust 惯用法</a> ·
+  <a href="../reference/architecture.html">架构与文件结构</a>。</li>
+</ul>
+
+<h2>我是你的老师，随时问</h2>
+
+<div class="callout">
+<p><code>str::to_owned</code> 和 <code>String::from</code> 有什么区别、<code>.get</code> 和索引 <code>[i]</code> 怎么选、
+为什么 <code>?</code> 在这里能直接用……任何卡住的地方直接问。下一课：<strong>让光标动起来</strong>——
+上下左右移动，并让画面随光标滚动。</p>
+</div>
+
+<div class="lesson-nav">
+  <a class="prev" href="0002-a-clean-canvas.html">← 第 2 课 · 干净的画布</a>
+  <a class="next" href="#">第 4 课 · 光标与滚动（待生成）</a>
+</div>
+
+<p class="footer-note">kilo-rs 课程 · Lesson 0003。总目录见 <a href="../MISSION.md">MISSION.md</a>。</p>
+
+</body>
+</html>

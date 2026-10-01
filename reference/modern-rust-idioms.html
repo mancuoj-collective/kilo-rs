@@ -148,6 +148,28 @@ impl Drop for RawModeGuard {
 </tbody>
 </table>
 
+<h3>字符串转换：<code>to_owned</code> / <code>from</code> / <code>to_string</code></h3>
+
+<p>对 <code>&amp;str → String</code>，三者<strong>结果和性能完全一样</strong>，区别在来源与语义：</p>
+
+<table>
+<thead><tr><th>写法</th><th>来源</th><th>该用在哪</th></tr></thead>
+<tbody>
+<tr><td><code>str::to_owned(s)</code></td><td><code>ToOwned</code>（<code>Clone</code> 的 <code>?Sized</code> 推广）</td>
+    <td>迭代器链、泛型、<code>Cow</code>：类型无关，写法统一</td></tr>
+<tr><td><code>String::from(s)</code> / <code>s.into()</code></td><td><code>From&lt;&amp;str&gt;</code></td>
+    <td>显式转换，或需要 <code>Into</code> 的场合</td></tr>
+<tr><td><code>s.to_string()</code></td><td><code>ToString</code> / <code>Display</code></td>
+    <td>把实现了 <code>Display</code> 的值渲染成文本</td></tr>
+</tbody>
+</table>
+
+<div class="warn">
+<p><span class="tag">陷阱</span> 对 <code>&amp;&amp;str</code> 调 <code>.to_owned()</code> 得到的是 <code>&amp;str</code>，不是 <code>String</code>
+（因为 <code>&amp;str: Clone</code> ⇒ <code>ToOwned for &amp;str</code> 的 <code>Owned = &amp;str</code>）。
+用函数路径 <code>str::to_owned</code> 可避开歧义——它明确是 <code>fn(&amp;str) -&gt; String</code>。</p>
+</div>
+
 <h2>6. 注释与文档</h2>
 
 <ul>

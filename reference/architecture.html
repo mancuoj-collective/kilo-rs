@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>参考 · 架构与文件结构</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>参考 · 架构与文件结构</h1>
+<p class="lesson-meta">kilo-rs 课程 · Reference 0003 · 现代 Rust CLI 的模块划分</p>
+
+<p class="lede">这一页回答两个问题：<strong>什么时候该分文件</strong>，以及 <strong>kilo-rs 最终长什么样</strong>。
+它不是「现在就把代码拆成这样」的指令，而是一张地图——拆分的时机到了，照着它走。</p>
+
+<h2>一、什么时候分文件：按「接缝」，不按行数</h2>
+
+<p>「文件太长了」<strong>不是</strong>拆分的理由。拆分的依据是能不能画出一条干净的<strong>接缝（seam）</strong>——
+接口放在哪里，能让调用方少学一点、维护者少找一点。</p>
+
+<div class="callout">
+<p><span class="tag">词汇</span> <strong>深模块</strong>＝小接口 + 大量实现。一小撮方法背后藏着一堆逻辑，
+调用方（和测试）只需要学那点接口。反过来，接口和实现一样复杂，就是<strong>浅模块</strong>，是负担。
+<br>拆分的价值来自<strong>深</strong>：接口小 → 调用方省力；实现集中 → 维护和测试都在一处。</p>
+</div>
+
+<h3>出现这些信号，就该拆了</h3>
+<ul>
+<li><strong>一组函数共享隐藏的状态或不变式</strong>。例如终端守卫：raw mode、备用屏幕、光标必须成对开关——
+  这是一个概念，不是三个函数。</li>
+<li><strong>它在领域里有名字</strong>：Document（缓冲区）、Row（一行）、Cursor（光标）、Syntax（高亮规则）。
+  「能被命名的东西」通常就是一层接缝。</li>
+<li><strong>你希望能通过一个小接口测试它</strong>。</li>
+<li><strong>删除测试</strong>：假设删掉这个模块，如果复杂度消失了，它是多余的；如果复杂度在 N 个调用方重新冒出来，
+  它就是在挣饭吃。</li>
+</ul>
+
+<h3>这些是反模式</h3>
+<ul>
+<li><strong>按行数拆</strong>：拆出来一堆浅模块，接口和实现一样大。</li>
+<li><strong>按技术层拆</strong>（models / services / utils）：Rust 里尤其糟——<code>utils.rs</code> 是垃圾桶。</li>
+<li><strong>过早抽象</strong>：第一次出现就抽接口。等第三次出现，形态才会清晰
+  （Martin Fowler 的「Rule of Three」）。重复两行代码，比错误的抽象便宜得多。</li>
+</ul>
+
+<h2>二、现代 Rust 二进制的三条结构原则</h2>
+
+<h3>① <code>main.rs</code> 要薄</h3>
+<p>真正的 <code>main</code> 只做三件事：初始化（<code>color-eyre</code>）、解析参数、调用一个入口函数，
+然后把错误映射成退出码。业务逻辑一行都不该在这里。</p>
+
+<h3>② <code>lib.rs</code> + <code>main.rs</code>：把逻辑放进库</h3>
+<p>把逻辑放在 <code>src/lib.rs</code> 及其模块里，<code>main.rs</code> 只是一个几行的二进制外壳。
+这样 <code>tests/</code> 里的集成测试可以直接 <code>use kilo::…</code> 你的逻辑——
+<strong>这是「二进制也能被测试」的关键一招</strong>，也是初学者最常忽略的结构优点。</p>
+
+<h3>③ 按领域概念分模块，可见性收紧</h3>
+<p>模块对应「概念」，不对应「层」。跨模块可见性默认用 <code>pub(crate)</code>，
+只有库真正对外暴露的 API 才用 <code>pub</code>——<strong>接口的边界靠可见性强制出来</strong>。</p>
+
+<p>文件命名：Rust 2018 之后用 <code>foo.rs</code> + <code>foo/</code> 目录，不要再写 <code>mod.rs</code>。</p>
+
+<h2>三、kilo-rs 目标结构</h2>
+
+<pre><code>kilo-rs/
+├── Cargo.toml
+└── src/
+    ├── main.rs        # 薄：color-eyre + 参数 + App::run()
+    ├── lib.rs         # 声明模块，真正的逻辑入口
+    ├── tui.rs         # 终端生命周期：raw mode / 备用屏幕 / 光标 / panic hook
+    ├── app.rs         # 应用状态机：光标、滚动、脏标记，持有 Document
+    ├── document.rs    # 缓冲区：行、增删改、读写文件（领域模型）
+    ├── row.rs         # 单行 + 渲染展开（tab、高亮片段）
+    ├── ui.rs          # 纯渲染：&App -> 终端（无状态）
+    └── syntax.rs      # 语法高亮规则
+</code></pre>
+
+<p>对照原版 C kilo：它的 <code>editorConfig E;</code> 是全局变量，所有函数都往它身上摸。
+我们的做法是把状态<strong>装进 <code>App</code></strong>，通过 <code>&amp;mut App</code> 传递——
+所有权和可变性由类型系统管，而不是靠约定。</p>
+
+<h2>四、每个模块的接口草图</h2>
+
+<p>看接口有多<strong>小</strong>：这正是「深」的含义。</p>
+
+<table>
+<thead><tr><th>模块</th><th>接口（大致）</th><th>藏起来的实现</th></tr></thead>
+<tbody>
+<tr><td><code>tui</code></td>
+    <td><code>Terminal::enter() -&gt; io::Result&lt;Terminal&gt;</code>、<code>Drop</code>、<code>install_panic_hook()</code>、<code>size()</code></td>
+    <td>raw mode、备用屏幕、光标、panic 恢复</td></tr>
+<tr><td><code>document</code></td>
+    <td><code>Document::open(path)</code>、<code>line(i) -&gt; Option&lt;&amp;str&gt;</code>、<code>insert_char</code>、<code>insert_newline</code>、<code>delete_char</code>、<code>save</code>、<code>is_dirty</code></td>
+    <td>行的存储、UTF-8 处理、脏标记、文件 I/O</td></tr>
+<tr><td><code>row</code></td>
+    <td><code>Row::from(&amp;str)</code>、<code>render() -&gt; &amp;str</code>、<code>cx_to_rx</code>、<code>rx_to_cx</code></td>
+    <td>tab 展开、高亮片段、坐标换算</td></tr>
+<tr><td><code>app</code></td>
+    <td><code>App::new(document)</code>、<code>App::run() -&gt; io::Result&lt;()&gt;</code>（<code>on_key</code>/<code>draw</code> 私有）</td>
+    <td>事件循环、光标移动、滚动计算、脏标记</td></tr>
+<tr><td><code>ui</code></td>
+    <td><code>draw(app: &amp;App, out, area)</code></td>
+    <td>逐行输出、status bar、message bar</td></tr>
+<tr><td><code>syntax</code></td>
+    <td><code>Syntax::for_path(path)</code>、<code>highlight(row) -&gt; Vec&lt;Span&gt;</code></td>
+    <td>关键字表、注释/字符串状态机、颜色</td></tr>
+</tbody>
+</table>
+
+<div class="callout">
+<p><span class="tag">注意 <code>app</code> 与 <code>ui</code> 的分工</span> <code>app</code> 是<strong>状态 + 行为</strong>，
+<code>ui</code> 是<strong>纯函数式的渲染</strong>。让渲染只读 <code>&amp;App</code>、不改变状态，
+你就能为它写「给定状态 → 期望输出」的测试，也能以后换渲染后端。这是「返回结果，而不是产生副作用」。</p>
+</div>
+
+<h2>五、拆分路线图（和课程对应）</h2>
+
+<ol>
+<li><strong>第 4 课（下一步）：<code>tui.rs</code> + <code>lib.rs</code></strong>。
+   终端守卫是最干净的第一刀：概念单一、接口极小、和编辑器逻辑零耦合。
+   同时做 lib/main 拆分，从此能写测试。</li>
+<li><strong>编辑功能到来时：<code>document.rs</code> + <code>row.rs</code></strong>。
+   插入、删除会让「缓冲区」长出一组共享不变式的方法——那时它就是深模块。</li>
+<li><strong>光标与滚动：<code>app.rs</code></strong>。状态多了（cx/cy/rowoff/coloff/dirty），
+   把它们装进一个结构，事件循环也搬进来。</li>
+<li><strong>状态栏 / 消息栏：<code>ui.rs</code></strong>。渲染逻辑攒够了，抽成只读 <code>&amp;App</code> 的函数。</li>
+<li><strong>语法高亮：<code>syntax.rs</code></strong>。规则表 + 状态机，独立成模块。</li>
+</ol>
+
+<div class="warn">
+<p><span class="tag">原则</span> 每一刀都是<strong>「行为不变的搬家」</strong>：先让现有功能继续跑通（可编译、可运行），
+再搬家，搬完再跑一次。绝不「一边重构一边加功能」。这就是为什么拆分要<strong>等接缝清晰</strong>——
+接缝不清楚时搬家，就是在造错误抽象。</p>
+</div>
+
+<h2>六、来源</h2>
+<ul class="ref-list">
+<li><a href="https://github.com/ratatui/templates">ratatui 官方模板仓库</a>
+  —— 现代 TUI 项目的现成结构范例（app / event / tui / update / cli 的关注点划分）。</li>
+<li><a href="https://doc.rust-lang.org/book/ch07-00-managing-growing-projects-with-packages-crates-and-modules.html">The Book · 第 7 章</a>
+  —— 包、crate、模块、路径、可见性。</li>
+<li>A Philosophy of Software Design（Ousterhout）—— 深模块与复杂度。本课程取「深度＝杠杆」的解释。</li>
+<li><a href="https://martinfowler.com/bliki/FlagArgument.html">Rule of Three / 错误抽象</a> —— 见 Apollo 手册 §1.8。</li>
+</ul>
+
+<div class="lesson-nav">
+  <a class="prev" href="modern-rust-idioms.html">← 参考 · 现代 Rust 惯用法</a>
+  <a class="next" href="crossterm-terminal-basics.html">参考 · 终端基础与 crossterm API →</a>
+</div>
+
+</body>
+</html>

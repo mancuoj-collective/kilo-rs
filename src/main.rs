@@ -1,4 +1,5 @@
 use std::{
+    env, fs,
     io::{self, Write},
     panic::{set_hook, take_hook},
 };
@@ -9,7 +10,7 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
     execute, queue,
     style::Print,
-    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
 const NAME: &str = env!("CARGO_PKG_NAME");
@@ -49,15 +50,20 @@ fn install_panic_hook() {
     }));
 }
 
-fn draw() -> io::Result<()> {
+fn draw(lines: &[String]) -> io::Result<()> {
     let (cols, rows) = terminal::size()?;
     let mut stdout = io::stdout();
+
+    queue!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
 
     for y in 0..rows {
         if y > 0 {
             queue!(stdout, Print("\r\n"))?;
         }
-        if y == rows / 3 {
+
+        if let Some(line) = lines.get(y as usize) {
+            queue!(stdout, Print(truncate(line, cols)))?;
+        } else if lines.is_empty() && y == rows / 3 {
             queue!(stdout, Print(welcome_line(cols)))?;
         } else {
             queue!(stdout, Print('~'))?;
@@ -70,15 +76,27 @@ fn draw() -> io::Result<()> {
 
 fn welcome_line(cols: u16) -> String {
     let text = format!("~ {NAME} editor -- version {VERSION}");
-    text.chars().take(cols as usize).collect()
+    truncate(&text, cols)
+}
+
+fn truncate(text: &str, width: u16) -> String {
+    text.chars().take(width as usize).collect()
 }
 
 fn main() -> Result<()> {
     color_eyre::install()?;
     install_panic_hook();
 
+    let lines = match env::args().nth(1) {
+        Some(path) => fs::read_to_string(&path)?
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+        None => Vec::new(),
+    };
+
     let _guard = Terminal::enter()?;
-    draw()?;
+    draw(&lines)?;
 
     loop {
         match event::read()? {
@@ -86,7 +104,7 @@ fn main() -> Result<()> {
                 KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
                 _ => {}
             },
-            Event::Resize(_, _) => draw()?,
+            Event::Resize(_, _) => draw(&lines)?,
             _ => {}
         }
     }
