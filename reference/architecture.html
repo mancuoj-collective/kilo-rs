@@ -55,6 +55,18 @@
 这样 <code>tests/</code> 里的集成测试可以直接 <code>use kilo::…</code> 你的逻辑——
 <strong>这是「二进制也能被测试」的关键一招</strong>，也是初学者最常忽略的结构优点。</p>
 
+<div class="callout">
+<p><span class="tag">诚实地说</span> 这<strong>不是唯一写法，也不是硬性要求</strong>。
+唯一的技术理由是：<strong><code>tests/</code>（集成测试）和 <code>benches/</code> 只能链接库，链不到二进制</strong>。
+单元测试（<code>#[cfg(test)] mod tests</code>）在纯二进制的 crate 里照样能跑，
+所以很多小 CLI 只写 <code>main.rs</code> + 模块，同样是现代做法——别 cargo-cult。</p>
+<p><strong>决策规则</strong>：需要黑盒测试 / 基准 / 复用为库 → 用 <code>lib.rs</code>；
+只需要单元测试 → <code>main.rs</code> + <code>mod</code> 就够。</p>
+<p>本项目选 <code>lib.rs</code>，是因为「编辑器核心」值得被<strong>无终端地跑集成测试</strong>
+（全屏 TUI 没法用 <code>assert_cmd</code> 那样黑盒跑）。代价是 <code>main</code> 只能看到 <code>pub</code> 项，
+所以我们只暴露一个 <code>pub fn run()</code> 把接口收窄，而不是把内部函数都标 <code>pub</code>。</p>
+</div>
+
 <h3>③ 按领域概念分模块，可见性收紧</h3>
 <p>模块对应「概念」，不对应「层」。跨模块可见性默认用 <code>pub(crate)</code>，
 只有库真正对外暴露的 API 才用 <code>pub</code>——<strong>接口的边界靠可见性强制出来</strong>。</p>
@@ -140,6 +152,9 @@
   —— 现代 TUI 项目的现成结构范例（app / event / tui / update / cli 的关注点划分）。</li>
 <li><a href="https://doc.rust-lang.org/book/ch07-00-managing-growing-projects-with-packages-crates-and-modules.html">The Book · 第 7 章</a>
   —— 包、crate、模块、路径、可见性。</li>
+<li><a href="https://rust-cli.github.io/book/tutorial/testing.html">Command Line Applications in Rust · Testing</a>
+  —— 官方 CLI 书，含《Splitting your code into library and binary targets》一节，<code>lib.rs</code> 建议的一手来源。</li>
+<li><code>cargo</code> 自身：<code>src/bin/cargo/main.rs</code> 是薄 bin，<code>use cargo::…</code>，逻辑全在库里。</li>
 <li>A Philosophy of Software Design（Ousterhout）—— 深模块与复杂度。本课程取「深度＝杠杆」的解释。</li>
 <li><a href="https://martinfowler.com/bliki/FlagArgument.html">Rule of Three / 错误抽象</a> —— 见 Apollo 手册 §1.8。</li>
 </ul>

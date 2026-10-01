@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 4 课 · 第一次重构</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>第 4 课 · 第一次重构</h1>
+<p class="lesson-meta">kilo-rs 课程 · Lesson 0004 · 预计 25–35 分钟 · 只搬家，不加功能</p>
+
+<p class="lede">这一课<strong>一个新功能都不加</strong>。我们要把已经写出来的东西重新摆放：
+终端生命周期搬进 <code>src/tui.rs</code>，逻辑搬进 <code>src/lib.rs</code>，
+<code>src/main.rs</code> 只剩一层薄外壳。这是你「拆模块」这项成功标准的第一次落地。</p>
+
+<div class="win">
+<p><span class="tag">本课成果</span></p>
+<ul>
+<li>一个 <code>lib.rs</code> + <code>tui.rs</code> + 薄 <code>main.rs</code> 的三文件结构；</li>
+<li><code>tui</code> 成为第一个<strong>深模块</strong>：对外只有两个东西，内部藏着所有终端恢复逻辑；</li>
+<li>行为<strong>和上一课一模一样</strong>（打开文件、重画、Ctrl-Q 退出、panic 干净恢复）；</li>
+<li>从此以后，逻辑可以被 <code>tests/</code> 里的集成测试 <code>use kilo::…</code> 直接测试。</li>
+</ul>
+</div>
+
+<h2>为什么是现在</h2>
+
+<p>重构的时机不是「文件太长」，而是「接缝清晰了」。终端生命周期恰好是最干净的一刀：</p>
+
+<ul>
+<li><strong>概念单一</strong>：raw mode、备用屏幕、光标——它们必须成对开关，是一个概念。</li>
+<li><strong>接口极小</strong>：对外只需要「进入」和「装 panic hook」两个入口。</li>
+<li><strong>零耦合</strong>：它完全不知道「编辑器」「文件」「光标」是什么。</li>
+</ul>
+
+<div class="warn">
+<p><span class="tag">铁律：行为不变的搬家</span></p>
+<ol>
+<li>先让现有功能跑通（编译 + 运行 + clippy 都过）。</li>
+<li>只做搬家，<strong>一行逻辑都不改</strong>。</li>
+<li>再跑一遍，确认行为一模一样。</li>
+</ol>
+<p>绝不「一边重构一边加功能」——否则「搬家搬错了」和「新功能有 bug」会混在一起，没法定位。</p>
+</div>
+
+<h2>目标结构</h2>
+
+<pre><code>src/
+├── main.rs   # 薄外壳：color-eyre + 装 hook + 调用库
+├── lib.rs    # 逻辑入口：run()、draw()、truncate()…
+└── tui.rs    # 终端生命周期：Terminal 守卫 + panic hook
+</code></pre>
+
+<h2>动手</h2>
+
+<div class="task">
+<p><span class="tag">任务 1</span> 新建 <code>src/tui.rs</code></p>
+<p>把 <code>Terminal</code>、<code>restore</code>、<code>install_panic_hook</code> 原样剪到这里：</p>
+<pre><code>//! 终端生命周期管理。
+//!
+//! 把「raw mode、备用屏幕、光标」这些必须成对开关的操作封装成 [`Terminal`] 守卫，
+//! 并用 [`install_panic_hook`] 保证 panic 时也会恢复终端。
+
+use std::io;
+
+use crossterm::{
+    cursor,
+    execute,
+    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+};
+
+/// 全屏编辑状态的守卫。
+///
+/// 持有它期间，终端处于 raw mode、备用屏幕上、光标隐藏；它被丢弃时恢复原状——
+/// 无论是正常返回、`?` 提前返回，还是 panic 展开。
+pub struct Terminal;
+
+impl Terminal {
+    /// 进入全屏编辑状态。
+    ///
+    /// # Errors
+    ///
+    /// 终端不可用时返回底层的 [`io::Error`]。
+    pub fn enter() -&gt; io::Result&lt;Self&gt; {
+        terminal::enable_raw_mode()?;
+
+        // 先构造守卫，再执行可能失败的命令：失败时 guard 会析构并恢复 raw mode。
+        let guard = Self;
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
+
+        Ok(guard)
+    }
+}
+
+impl Drop for Terminal {
+    fn drop(&amp;mut self) {
+        restore();
+    }
+}
+
+/// 安装一个 panic hook：先恢复终端，再把信息交回原来的 hook 打印。
+///
+/// 必须在设置好其它 hook（例如 `color_eyre::install`）**之后**调用。
+pub fn install_panic_hook() {
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        restore();
+        hook(info);
+    }));
+}
+
+/// 恢复终端原状。`Drop` 与 panic hook 共用这一份逻辑。
+fn restore() {
+    let mut stdout = io::stdout();
+    let _ = execute!(stdout, cursor::Show, LeaveAlternateScreen);
+    let _ = terminal::disable_raw_mode();
+}</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 2</span> 新建 <code>src/lib.rs</code></p>
+<p>把 <code>main</code> 里的<strong>逻辑</strong>（读文件、事件循环、渲染）搬过来，改名成 <code>run</code>，
+并声明 <code>tui</code> 模块：</p>
+<pre><code>//! kilo-rs：一个用 Rust 重写的 kilo 文本编辑器。
+//!
+//! 逻辑放在库里（便于集成测试），`main.rs` 只是一层薄外壳。
+//! 目前只有终端生命周期被拆成 [`tui`] 模块；随着功能增长，
+//! 这里的 `run` / `draw` 会进一步拆成 `app`、`ui`、`document`、`row`、`syntax`。
+
+pub mod tui;
+
+use std::{
+    env, fs,
+    io::{self, Write},
+};
+
+use color_eyre::Result;
+use crossterm::{
+    cursor::MoveTo,
+    event::{self, Event, KeyCode, KeyModifiers},
+    queue,
+    style::Print,
+    terminal::{self, Clear, ClearType},
+};
+
+use crate::tui::Terminal;
+
+const NAME: &amp;str = env!("CARGO_PKG_NAME");
+const VERSION: &amp;str = env!("CARGO_PKG_VERSION");
+
+/// 运行编辑器：读取文件、接管终端、进入事件循环。
+///
+/// # Errors
+///
+/// 读文件失败或终端操作失败时返回错误。
+pub fn run() -&gt; Result&lt;()&gt; {
+    // 读取命令行里的文件名；没有就开一个空 buffer
+    let lines = match env::args().nth(1) {
+        Some(path) =&gt; fs::read_to_string(&amp;path)?
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+        None =&gt; Vec::new(),
+    };
+
+    let _guard = Terminal::enter()?;
+    draw(&amp;lines)?;
+
+    loop {
+        match event::read()? {
+            Event::Key(key) if key.is_press() =&gt; match key.code {
+                KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) =&gt; break,
+                _ =&gt; {}
+            },
+            Event::Resize(_, _) =&gt; draw(&amp;lines)?,
+            _ =&gt; {}
+        }
+    }
+
+    Ok(())
+}
+
+/// 画一帧：文件的前若干行，其余用 `~` 补满；空文件显示欢迎语。
+fn draw(lines: &amp;[String]) -&gt; io::Result&lt;()&gt; {
+    let (cols, rows) = terminal::size()?;
+    let mut stdout = io::stdout();
+
+    queue!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
+
+    for y in 0..rows {
+        if let Some(line) = lines.get(y as usize) {
+            queue!(stdout, Print(truncate(line, cols)))?;
+        } else if lines.is_empty() &amp;&amp; y == rows / 3 {
+            queue!(stdout, Print(welcome_line(cols)))?;
+        } else {
+            queue!(stdout, Print('~'))?;
+        }
+
+        if y + 1 &lt; rows {
+            queue!(stdout, Print("\r\n"))?;
+        }
+    }
+
+    queue!(stdout, MoveTo(0, 0))?;
+    stdout.flush()
+}
+
+/// 把一段文字截断到终端宽度（按字符，不按字节）。
+fn truncate(text: &amp;str, width: u16) -&gt; String {
+    text.chars().take(width as usize).collect()
+}
+
+fn welcome_line(cols: u16) -&gt; String {
+    let text = format!("~ {NAME} editor -- version {VERSION}");
+    truncate(&amp;text, cols)
+}</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 3</span> 把 <code>src/main.rs</code> 削成薄外壳</p>
+<p>只留初始化和调用：</p>
+<pre><code>//! `kilo` 二进制入口：初始化 + 调用库，不含业务逻辑。
+
+use color_eyre::Result;
+
+fn main() -&gt; Result&lt;()&gt; {
+    color_eyre::install()?;
+    // 必须在 color_eyre::install() 之后，才能包住它设置的 panic hook。
+    kilo::tui::install_panic_hook();
+    kilo::run()
+}</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 4</span> 验证「行为不变」</p>
+<pre><code>cargo run -- kilo.c
+cargo clippy --all-targets -- -D warnings</code></pre>
+<p>应该和上一课<strong>完全一样</strong>：文件铺满、空行 <code>~</code>、Ctrl-Q 退出。
+如果哪里不一样，就是搬家搬错了，退回去重搬。</p>
+</div>
+
+<h2>逐段拆解</h2>
+
+<ul>
+<li><strong><code>main.rs</code> 现在只有 4 行逻辑</strong>。它做的是「二进制该做的事」：初始化错误上报、
+  装 panic hook、调用库。业务逻辑一行都不在这里。</li>
+<li><strong>为什么 <code>color_eyre::install()</code> 和 <code>install_panic_hook()</code> 都留在 <code>main</code></strong>：
+  它俩有<strong>顺序依赖</strong>（hook 必须在 install 之后装）。把有顺序约束的两个调用放在一起，
+  约束就写在明面上，而不是拆散到两个文件里靠记忆维持。</li>
+<li><code>kilo::tui::install_panic_hook()</code> 里的 <code>kilo</code>：这是<strong>本包编译出的库 crate</strong>。
+  一个 package 可以同时有 <code>lib.rs</code>（库 <code>kilo</code>）和 <code>main.rs</code>（二进制 <code>kilo</code>），
+  二进制依赖库，所以能用 <code>kilo::…</code>。</li>
+<li><code>pub mod tui;</code> / <code>pub fn run()</code> / <code>pub struct Terminal</code>：
+  <strong>二进制是另一个 crate</strong>，只能看到库的 <code>pub</code> 项。所以 main 用得到的东西必须是 <code>pub</code>。</li>
+<li><code>fn restore()</code> <strong>保持私有</strong>：这是「深模块」的关键。对外只需要「进入」和「装 hook」，
+  恢复的细节是不变式，不给外面机会去乱用。接口小，实现大——这就是深度。</li>
+<li><code>use crate::tui::Terminal;</code>：Rust 2018 起，路径用 <code>crate::</code> 表示「本 crate 内部」。</li>
+<li><code>//!</code> 是模块/ crate 级文档，写在文件顶部；<code>///</code> 是条目文档，贴在 <code>fn</code>/<code>struct</code> 上。
+  <code># Errors</code> 段是因为本项目的 <code>clippy::pedantic</code> 要求公开的 <code>Result</code> 函数说明错误条件——
+  写清楚对调用者是好事。</li>
+</ul>
+
+<div class="callout">
+<p><span class="tag">删除测试</span> 假设删掉 <code>tui.rs</code>：raw mode、备用屏幕、光标、panic 恢复这四段逻辑
+会重新散回 <code>run</code> 和 <code>main</code> 里，而且恢复的正确性不再有单一保证。
+它<strong>通过了删除测试</strong>——它在挣饭吃。</p>
+</div>
+
+<h2>下一步会拆什么</h2>
+
+<p>当功能长到接缝清晰时，按这个顺序继续（详见 <a href="../reference/architecture.html">参考 · 架构与文件结构</a>）：</p>
+
+<ol>
+<li><strong>编辑功能到来 → <code>document.rs</code> + <code>row.rs</code></strong>（缓冲区会形成深模块）。</li>
+<li><strong>光标与滚动 → <code>app.rs</code></strong>（cx/cy/rowoff/coloff/dirty 攒进一个结构）。</li>
+<li><strong>状态栏 → <code>ui.rs</code></strong>（渲染抽成只读 <code>&amp;App</code> 的函数）。</li>
+<li><strong>语法高亮 → <code>syntax.rs</code></strong>。</li>
+</ol>
+
+<h2>小测</h2>
+
+<div class="quiz">
+<p class="q">1. <code>restore()</code> 为什么保持私有？</p>
+<ul>
+<li>对外只需「进入」，恢复是内部不变式</li>
+<li>因为私有函数执行起来更快</li>
+<li>因为返回 <code>()</code> 的函数不能公开</li>
+<li>因为 <code>Drop</code> 只能调用私有函数</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。把恢复藏起来，外面就无法「只退出备用屏幕却不关 raw mode」这种半吊子操作，
+接口因此变小、变安全。这正是深模块的意义。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">2. 为什么把逻辑放进 <code>lib.rs</code>，而不是全留在 <code>main.rs</code>？</p>
+<ul>
+<li>集成测试能 <code>use kilo::…</code> 直接测逻辑</li>
+<li>库总是比二进制编译得更快一些</li>
+<li>二进制文件里不能写私有函数</li>
+<li><code>lib.rs</code> 会自动生成在线文档站</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。<code>tests/</code> 目录里的集成测试只能链接<strong>库</strong>，链接不到二进制。
+把逻辑放进库，才有了「不启动界面也能测核心逻辑」的可能。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">3. <code>main.rs</code> 里的 <code>kilo::run()</code>，这个 <code>kilo</code> 指什么？</p>
+<ul>
+<li>本包编译出的那个库 crate</li>
+<li>操作系统里的进程名字</li>
+<li><code>Cargo.toml</code> 里的一行依赖项</li>
+<li>需要额外导入的第三方 crate</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。package 名是 <code>kilo</code>，它同时产出库 crate <code>kilo</code> 和二进制 crate <code>kilo</code>；
+二进制 crate 依赖库 crate，所以 <code>kilo::run()</code> 调的是自己的库。</p>
+</details>
+</div>
+
+<h2>主要资料</h2>
+<ul class="ref-list">
+<li><a href="https://doc.rust-lang.org/book/ch07-00-managing-growing-projects-with-packages-crates-and-modules.html">The Book · 第 7 章</a>
+  —— 包、crate、模块、路径、<code>pub</code>。</li>
+<li><a href="https://doc.rust-lang.org/cargo/guide/project-layout.html">Cargo · 项目布局</a>
+  —— 同时拥有 lib 与 bin 的包。</li>
+<li>本课程：<a href="../reference/architecture.html">参考 · 架构与文件结构</a>。</li>
+</ul>
+
+<h2>我是你的老师，随时问</h2>
+
+<div class="callout">
+<p><code>pub(crate)</code> 和 <code>pub</code> 怎么选、<code>mod</code> 和文件名的对应关系、
+为什么 <code>crate::</code>、<code>self::</code>、<code>super::</code> 有三种路径……任何卡住的地方直接问。
+下一课开始真正加功能：<strong>让光标动起来，并让画面跟着滚动</strong>。</p>
+</div>
+
+<div class="lesson-nav">
+  <a class="prev" href="0003-open-a-file.html">← 第 3 课 · 打开一个文件</a>
+  <a class="next" href="#">第 5 课 · 光标与滚动（待生成）</a>
+</div>
+
+<p class="footer-note">kilo-rs 课程 · Lesson 0004。总目录见 <a href="../MISSION.md">MISSION.md</a>。</p>
+
+</body>
+</html>
