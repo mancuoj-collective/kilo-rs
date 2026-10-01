@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>参考 · 现代 Rust 惯用法</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>参考 · 现代 Rust 惯用法</h1>
+<p class="lesson-meta">kilo-rs 课程 · Reference 0002 · 本课程的风格约定，随课程增长</p>
+
+<p class="lede">这不是语法教程，而是本课程刻意采用的<strong>现代写法速查</strong>。依据主要是
+<a href="https://github.com/apollographql/rust-best-practices">Apollo《Rust Best Practices》</a>
+与 <a href="https://rust-lang.github.io/api-guidelines/">Rust API Guidelines</a>。
+遇到「hecto 是那样写的，但我们这样写」时，来这里查理由。</p>
+
+<h2>1. import 的顺序</h2>
+
+<p>约定：<code>std</code> → 空行 → 外部 crate → 空行 → 本 crate（<code>crate::</code> / <code>super::</code>）。
+rustfmt 的 <code>group_imports = "StdExternalCrate"</code> 能自动做，但目前要 nightly 才完全生效，
+所以先手工遵守。</p>
+
+<pre><code>use std::io::{self, Write};
+
+use color_eyre::Result;
+use crossterm::terminal;
+
+use crate::document::Document;</code></pre>
+
+<h2>2. <code>let … else</code>：模式不匹配就提前离开</h2>
+
+<p>当「不匹配」是正常、可预期的情况（<code>continue</code> / <code>break</code> / <code>return</code>），
+用 <code>let … else</code>（Rust 1.65+），不要用 <code>if let … { } else { }</code> 套娃。</p>
+
+<table>
+<thead><tr><th>场景</th><th>选择</th></tr></thead>
+<tbody>
+<tr><td>失败分支要做额外计算，且需要那个值</td><td><code>if let … else { … }</code></td></tr>
+<tr><td>失败分支只是 <code>continue</code>/<code>break</code>/<code>return</code></td><td><code>let … else { … }</code></td></tr>
+<tr><td>需要分别处理 <code>Ok</code> 和 <code>Err</code> 的不同形态</td><td><code>match</code></td></tr>
+</tbody>
+</table>
+
+<pre><code>// ❌ 别扭
+if let Some(row) = self.row(idx) {
+    process(row);
+} else {
+    return;
+}
+
+// ✅ 现代
+let Some(row) = self.row(idx) else {
+    return;
+};
+process(row);</code></pre>
+
+<div class="callout">
+<p><span class="tag">视角</span> 一行里常常有<strong>两层失败</strong>，别混为一谈：</p>
+<ul>
+<li><code>expr?</code> 处理 <code>Result</code>/<code>Option</code> 层——出错就从<strong>当前函数返回</strong>（不是跳出循环）。</li>
+<li><code>let PATTERN = … else { … }</code> 处理<strong>枚举变体层</strong>——模式不匹配时就跑 else 块。</li>
+</ul>
+<p>例：<code>let Event::Key(key) = event::read()? else { continue };</code>
+= 先用 <code>?</code> 处理 I/O 错误，再用 <code>else</code> 跳过非键盘事件。else 块必须发散
+（<code>continue</code>/<code>break</code>/<code>return</code>/<code>panic!</code>）。</p>
+</div>
+
+<h2>3. RAII 与 <code>Drop</code>：资源清理的默认手段</h2>
+
+<p>Rust 没有 <code>try/finally</code>。凡是「必须成对出现」的操作（进入/退出 raw mode、
+加锁/解锁、开事务/提交或回滚），都用一个类型把清理放进 <code>Drop</code>。
+作用域一结束——正常、<code>?</code> 提前返回、panic 展开——清理都会执行。</p>
+
+<pre><code>struct RawModeGuard;
+
+impl RawModeGuard {
+    fn enter() -> io::Result&lt;Self&gt; {
+        terminal::enable_raw_mode()?;
+        Ok(Self)
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&amp;mut self) {
+        // Drop 不能 panic，否则展开中的 panic 会二次 panic 导致 abort
+        let _ = terminal::disable_raw_mode();
+    }
+}</code></pre>
+
+<div class="warn">
+<p><span class="tag">陷阱</span> <code>let _guard = …</code> 会活到作用域结束；
+<code>let _ = …</code> 会<strong>立刻丢弃</strong>。守卫变量必须带名字。</p>
+</div>
+
+<h2>4. 错误处理</h2>
+
+<ul>
+<li>能返回 <code>Result</code> 就不要 panic；不要在生产代码里 <code>unwrap()</code>/<code>expect()</code>。</li>
+<li>用 <code>?</code> 传播错误，而不是 <code>match</code> 层层手写。</li>
+<li><strong>二进制</strong>用 <code>eyre</code>（本项目是 <code>color-eyre</code>）或 <code>anyhow</code>；
+  <strong>库</strong>用 <code>thiserror</code> 定义精确错误类型。</li>
+<li>需要给错误加语境时用 <code>.context("…")?</code>（color-eyre/anyhow 都支持）。</li>
+</ul>
+
+<pre><code>fn main() -&gt; color_eyre::Result&lt;()&gt; {
+    color_eyre::install()?;
+    // ...
+    Ok(())
+}</code></pre>
+
+<h3>为什么内部函数用精确错误类型？</h3>
+
+<p><code>io::Result&lt;T&gt;</code> 是 <code>Result&lt;T, io::Error&gt;</code> 的别名；
+<code>color_eyre::Result&lt;T&gt;</code> 的 <code>E</code> 是 <code>eyre::Report</code>（能装任意错误）。
+<code>?</code> 会自动调用 <code>From</code> 把具体错误转成 <code>Report</code>，所以两种类型可以混用。</p>
+
+<table>
+<thead><tr><th>位置</th><th>返回类型</th><th>理由</th></tr></thead>
+<tbody>
+<tr><td>小的内部函数（如 <code>enter()</code>）</td><td><code>io::Result&lt;Self&gt;</code> 等具体类型</td>
+    <td>失败面精确、信息不丢、不耦合上层错误库</td></tr>
+<tr><td><code>main</code> / 应用边界</td><td><code>color_eyre::Result&lt;()&gt;</code></td>
+    <td>汇总多个来源、统一漂亮地展示给人看</td></tr>
+</tbody>
+</table>
+
+<p>口诀：<strong>错误类型尽量窄地往下沉，只在边界擦除。</strong></p>
+
+<h2>5. 更小的惯用法</h2>
+
+<table>
+<thead><tr><th>旧写法</th><th>现代写法</th></tr></thead>
+<tbody>
+<tr><td><code>print!("{:?}", key)</code></td><td><code>print!("{key:?}")</code>（内联格式参数，1.58+）</td></tr>
+<tr><td><code>#[allow(clippy::x)]</code></td><td><code>#[expect(clippy::x)]</code>（问题消失时会反过来提醒你）</td></tr>
+<tr><td><code>lazy_static!</code></td><td><code>std::sync::OnceLock</code></td></tr>
+<tr><td><code>once_cell::Lazy</code></td><td><code>std::sync::LazyLock</code>（1.80+）</td></tr>
+<tr><td><code>unwrap()</code> 用于「不可能失败」</td><td>优先 <code>?</code>；确实不可能失败时 <code>expect("原因")</code></td></tr>
+<tr><td><code>.clone()</code> 绕过借用检查</td><td>先想清楚所有权，尽量用 <code>&amp;T</code> / <code>&amp;str</code> / <code>&amp;[T]</code></td></tr>
+</tbody>
+</table>
+
+<h2>6. 注释与文档</h2>
+
+<ul>
+<li><code>//</code> 解释「为什么」，不解释「做了什么」。命名好的代码自己会说做了什么。</li>
+<li>公开 API 用 <code>///</code> 文档注释，写清用途、错误（<code># Errors</code>）、panic（<code># Panics</code>）。</li>
+<li>约定开头的具名注释：<code>// SAFETY:</code>、<code>// PERF:</code>、<code>// CONTEXT:</code>。</li>
+<li><code>// TODO</code> 要关联 issue，不要悬空。</li>
+</ul>
+
+<h2>7. 每次写完都跑</h2>
+
+<pre><code>cargo fmt
+cargo clippy --all-targets -- -D warnings</code></pre>
+
+<p>本项目 <code>Cargo.toml</code> 已经开启 <code>clippy::all</code> + <code>clippy::pedantic</code>，
+并 <code>forbid</code> 了 <code>unsafe_code</code>。</p>
+
+<h2>来源</h2>
+<ul class="ref-list">
+<li><a href="https://github.com/apollographql/rust-best-practices">Apollo GraphQL · Rust Best Practices Handbook</a>
+  —— 第 1、2、4、8 章是本参考的主要依据。</li>
+<li><a href="https://doc.rust-lang.org/book/ch15-03-drop.html">The Book · Drop</a>
+  —— RAII 与析构时机。</li>
+<li><a href="https://rust-lang.github.io/api-guidelines/">Rust API Guidelines</a> —— 命名与 API 设计。</li>
+<li><a href="https://doc.rust-lang.org/rust-by-example/flow_control/let_else.html">Rust by Example · let-else</a>。</li>
+</ul>
+
+<div class="lesson-nav">
+  <a class="prev" href="../lessons/0001-raw-mode-and-events.html">← 第 1 课 · 接管终端</a>
+  <a class="next" href="crossterm-terminal-basics.html">参考 · 终端基础与 crossterm API →</a>
+</div>
+
+</body>
+</html>

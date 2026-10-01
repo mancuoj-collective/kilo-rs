@@ -1,0 +1,177 @@
+/* kilo-rs 课程 · 共享样式
+   所有 lesson 与 reference 文档都链接这个文件，保证课程外观一致。
+   设计目标：屏幕可读、打印友好、长文不累。 */
+
+:root {
+  --ink: #1d1b18;
+  --ink-soft: #3a352e;
+  --paper: #fdfbf6;
+  --muted: #6b645b;
+  --rule: #e2dbcd;
+  --accent: #1f4e79;
+  --accent-border: #b9cfe0;
+  --accent-soft: #eaf1f7;
+  --green: #2f6b3a;
+  --green-border: #bcd9c2;
+  --green-soft: #eaf4ec;
+  --amber: #8a5a00;
+  --amber-border: #e6cf9a;
+  --amber-soft: #fbf3e0;
+  --code-bg: #f4f0e7;
+  --code-ink: #2a2722;
+  --maxw: 46rem;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0 auto;
+  max-width: var(--maxw);
+  padding: 3.5rem 1.5rem 6rem;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Charter", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+    "Songti SC", "Noto Serif SC", serif;
+  font-size: 1.06rem;
+  line-height: 1.75;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3 { line-height: 1.25; font-weight: 640; }
+h1 { font-size: 2.05rem; margin: 0 0 .35rem; letter-spacing: -.01em; }
+h2 {
+  font-size: 1.35rem; margin: 2.8rem 0 .8rem;
+  padding-bottom: .35rem; border-bottom: 1px solid var(--rule);
+}
+h3 { font-size: 1.1rem; margin: 1.8rem 0 .5rem; }
+
+p { margin: .9rem 0; }
+ul, ol { padding-left: 1.4rem; }
+li { margin: .3rem 0; }
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-border);
+}
+a:hover { border-bottom-color: var(--accent); }
+
+strong { font-weight: 640; }
+
+code, pre, kbd {
+  font-family: "SF Mono", ui-monospace, Menlo, Monaco, "Cascadia Code", monospace;
+}
+code {
+  font-size: .88em;
+  background: var(--code-bg);
+  padding: .12em .35em;
+  border-radius: 4px;
+}
+pre {
+  background: var(--code-bg);
+  color: var(--code-ink);
+  padding: 1rem 1.1rem;
+  border-radius: 8px;
+  border-left: 3px solid var(--accent);
+  overflow-x: auto;
+  font-size: .86rem;
+  line-height: 1.6;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+kbd {
+  font-size: .82em;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: .05em .35em;
+  background: #fff;
+}
+
+/* 标题区元信息 */
+.lesson-meta { color: var(--muted); font-size: .92rem; margin: 0 0 1.8rem; }
+.lede { font-size: 1.15rem; color: var(--ink-soft); }
+
+/* 提示框 */
+.callout, .win, .warn, .task {
+  border-radius: 8px;
+  padding: .9rem 1.1rem;
+  margin: 1.3rem 0;
+  border: 1px solid var(--rule);
+  background: #fff;
+}
+.callout { background: var(--accent-soft); border-color: var(--accent-border); }
+.win     { background: var(--green-soft);  border-color: var(--green-border); }
+.warn    { background: var(--amber-soft);  border-color: var(--amber-border); }
+.task    { border-left: 4px solid var(--accent); }
+.callout > :first-child, .win > :first-child,
+.warn > :first-child, .task > :first-child { margin-top: 0; }
+.callout > :last-child, .win > :last-child,
+.warn > :last-child, .task > :last-child { margin-bottom: 0; }
+
+.tag {
+  display: inline-block;
+  font-size: .72rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.win .tag   { color: var(--green); }
+.warn .tag  { color: var(--amber); }
+.task .tag  { color: var(--accent); }
+
+/* 表格 */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.2rem 0;
+  font-size: .93rem;
+}
+th, td {
+  text-align: left;
+  padding: .5rem .7rem;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+th { font-weight: 640; border-bottom-width: 2px; }
+
+/* 小测 */
+.quiz {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 1rem 1.2rem;
+  margin: 1.4rem 0;
+  background: #fff;
+}
+.quiz .q { font-weight: 640; margin-top: 0; }
+details { margin-top: .6rem; }
+details summary { cursor: pointer; color: var(--accent); font-size: .92rem; }
+details[open] summary { margin-bottom: .4rem; }
+details p { margin: .5rem 0; }
+
+/* 参考文档的紧凑列表 */
+.ref-list { font-size: .95rem; }
+
+/* 页脚导航 */
+.lesson-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 3.5rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--rule);
+  font-size: .95rem;
+}
+.lesson-nav a { border: none; }
+.lesson-nav .next { margin-left: auto; text-align: right; }
+
+.footer-note { color: var(--muted); font-size: .88rem; margin-top: 2.5rem; }
+
+@media print {
+  :root { --paper: #fff; }
+  body { max-width: none; padding: 0; font-size: 11pt; }
+  pre, .callout, .win, .warn, .task, .quiz, table { break-inside: avoid; }
+  a { color: inherit; border: none; }
+  .lesson-nav { display: none; }
+}

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>参考 · 终端基础与 crossterm API</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>参考 · 终端基础与 crossterm API</h1>
+<p class="lesson-meta">kilo-rs 课程 · Reference 0001 · 配合 <a href="../lessons/0001-raw-mode-and-events.html">第 1 课</a> 使用</p>
+
+<p class="lede">压缩后的速查表，不是教程。课程走到哪，这里补到哪。写法一律采用本课程的
+<a href="modern-rust-idioms.html">现代惯用法</a>。</p>
+
+<h2>一、raw mode 是什么</h2>
+
+<table>
+<thead><tr><th>行为</th><th>cooked mode</th><th>raw mode</th></tr></thead>
+<tbody>
+<tr><td>输入</td><td>按行交给程序</td><td>每次按键立即交给程序</td></tr>
+<tr><td>回显</td><td>终端自动显示</td><td>程序自己决定显示什么</td></tr>
+<tr><td>Ctrl-C / Ctrl-Q</td><td>被终端解释成信号</td><td>作为普通按键交给程序</td></tr>
+<tr><td>输出 <code>\n</code></td><td>换行并回到行首</td><td>只换行，需要写 <code>\r\n</code></td></tr>
+</tbody>
+</table>
+
+<h2>二、用 RAII 守卫开关 raw mode</h2>
+
+<p>不要手写 <code>enable_raw_mode()</code> / <code>disable_raw_mode()</code> 配对——用一个
+<code>Drop</code> 守卫，让编译器保证成对：</p>
+
+<pre><code>use std::io;
+
+use crossterm::terminal;
+
+/// 进入 raw mode，离开作用域时自动恢复（正常返回 / `?` / panic 都会触发）。
+struct RawModeGuard;
+
+impl RawModeGuard {
+    fn enter() -> io::Result&lt;Self&gt; {
+        terminal::enable_raw_mode()?;
+        Ok(Self)
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&amp;mut self) {
+        // Drop 不能 panic：忽略错误，避免二次 panic 导致 abort
+        let _ = terminal::disable_raw_mode();
+    }
+}
+
+// 用法：绑定必须有名字（`_` 会立刻析构）
+let _guard = RawModeGuard::enter()?;</code></pre>
+
+<div class="warn">
+<p><span class="tag">记住</span> 任何时候都不写裸的 <code>enable_raw_mode()</code>。
+救命手段：终端没恢复时盲打 <code>reset</code> 或 <code>stty sane</code> 后回车。</p>
+</div>
+
+<h2>三、事件循环骨架（现代写法）</h2>
+
+<pre><code>use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+
+loop {
+    let Event::Key(key) = event::read()? else {
+        continue; // Resize 等非键盘事件，跳过
+    };
+
+    if !key.is_press() {
+        continue; // Windows 会发松开事件；macOS/Linux 默认只有按下
+    }
+
+    match key.code {
+        KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) =&gt; break,
+        _ =&gt; { /* 处理其他按键 */ }
+    }
+}</code></pre>
+
+<p class="ref-list"><code>event::read()</code> 阻塞到有事件为止；非阻塞轮询用
+<code>event::poll(Duration)</code>。二者不能在多线程里混用，也不能和 <code>EventStream</code> 混用。</p>
+
+<h2>四、按键的两种信息</h2>
+
+<table>
+<thead><tr><th>字段</th><th>类型</th><th>含义 / 常用值</th></tr></thead>
+<tbody>
+<tr><td><code>key.code</code></td><td><code>KeyCode</code></td>
+    <td><code>Char('a')</code>、<code>Enter</code>、<code>Backspace</code>、<code>Delete</code>、
+        <code>Left/Right/Up/Down</code>、<code>Home</code>、<code>End</code>、<code>PageUp/PageDown</code>、<code>Tab</code>、<code>Esc</code></td></tr>
+<tr><td><code>key.modifiers</code></td><td><code>KeyModifiers</code></td>
+    <td>bitflags：<code>CONTROL</code>、<code>SHIFT</code>、<code>ALT</code>……用 <code>.contains(…)</code> 判断</td></tr>
+<tr><td><code>key.kind</code></td><td><code>KeyEventKind</code></td>
+    <td><code>Press</code> / <code>Release</code> / <code>Repeat</code>；用 <code>key.is_press()</code> 便捷判断</td></tr>
+</tbody>
+</table>
+
+<p>注意 <kbd>Esc</kbd> 单个键是 <code>KeyCode::Esc</code>；方向键会被 crossterm 解析成对应的
+<code>KeyCode</code>，你<strong>不用</strong>像 C 版那样自己读 <code>\x1b[A</code> 字节序列。</p>
+
+<h2>五、常见坑</h2>
+
+<ul>
+<li><strong>换行变楼梯</strong>：raw mode 下写 <code>\n</code> 只换行不回车，必须写 <code>\r\n</code>。</li>
+<li><strong>输出不出现</strong>：<code>print!</code> 之后要 <code>io::stdout().flush()?</code>。</li>
+<li><strong>守卫被提前析构</strong>：<code>let _ = RawModeGuard::enter()?;</code> 会立刻恢复 raw mode；
+  必须 <code>let _guard = …</code>。</li>
+<li><strong>KeyRelease 重复触发</strong>：跨平台用 <code>key.is_press()</code> 过滤。</li>
+<li><strong>panic 报告排版乱</strong>：报告在 <code>Drop</code> 之前打印，此时还在 raw mode。
+  解法是 panic hook（第 2 课）。</li>
+</ul>
+
+<h2>六、错误处理</h2>
+
+<p>本项目 <code>main</code> 用 <code>color-eyre</code>：</p>
+<pre><code>use color_eyre::Result;
+
+fn main() -&gt; Result&lt;()&gt; {
+    color_eyre::install()?;
+    // 任何 io::Error 都能用 ? 自动转成 Report
+    Ok(())
+}</code></pre>
+
+<h2>七、权威来源</h2>
+<ul class="ref-list">
+<li><a href="https://docs.rs/crossterm/0.29.0/crossterm/">crossterm 0.29 文档</a> — 所有 API 的最终依据。</li>
+<li><a href="https://github.com/apollographql/rust-best-practices">Apollo《Rust Best Practices》</a> — 错误处理与惯用法依据。</li>
+<li><a href="https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html">snaptoken 第 2 章</a> — raw mode 底层原理（C/termios）。</li>
+<li><a href="https://www.flenker.blog/hecto-chapter-2/">hecto 第 2 章</a> — Rust 版参考（写法比我们旧，注意对比）。</li>
+</ul>
+
+<div class="lesson-nav">
+  <a class="prev" href="modern-rust-idioms.html">← 参考 · 现代 Rust 惯用法</a>
+  <a class="next" href="../lessons/0001-raw-mode-and-events.html">第 1 课 · 接管终端 →</a>
+</div>
+
+</body>
+</html>
