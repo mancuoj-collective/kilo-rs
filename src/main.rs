@@ -1,47 +1,93 @@
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    panic::{set_hook, take_hook},
+};
 
 use color_eyre::eyre::Result;
 use crossterm::{
+    cursor::{self, MoveTo},
     event::{self, Event, KeyCode, KeyModifiers},
-    terminal,
+    execute, queue,
+    style::Print,
+    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-struct RawModeGuard;
+const NAME: &str = env!("CARGO_PKG_NAME");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-impl RawModeGuard {
+struct Terminal;
+
+impl Terminal {
     fn enter() -> io::Result<Self> {
         terminal::enable_raw_mode()?;
-        Ok(Self)
+
+        let guard = Self;
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
+
+        Ok(guard)
     }
 }
 
-impl Drop for RawModeGuard {
-    // Drop 里不能 panic，否则会让展开中的 panic 二次 panic，直接 abort。
-    // 所以这里显式忽略错误。
+impl Drop for Terminal {
     fn drop(&mut self) {
-        let _ = terminal::disable_raw_mode();
+        restore();
     }
+}
+
+fn restore() {
+    let mut stdout = io::stdout();
+    let _ = execute!(stdout, cursor::Show, LeaveAlternateScreen);
+    let _ = terminal::disable_raw_mode();
+}
+
+fn install_panic_hook() {
+    let prev = take_hook();
+    set_hook(Box::new(move |info| {
+        restore();
+        prev(info);
+    }));
+}
+
+fn draw() -> io::Result<()> {
+    let (cols, rows) = terminal::size()?;
+    let mut stdout = io::stdout();
+
+    for y in 0..rows {
+        if y > 0 {
+            queue!(stdout, Print("\r\n"))?;
+        }
+        if y == rows / 3 {
+            queue!(stdout, Print(welcome_line(cols)))?;
+        } else {
+            queue!(stdout, Print('~'))?;
+        }
+    }
+
+    queue!(stdout, MoveTo(0, 0))?;
+    stdout.flush()
+}
+
+fn welcome_line(cols: u16) -> String {
+    let text = format!("~ {NAME} editor -- version {VERSION}");
+    text.chars().take(cols as usize).collect()
 }
 
 fn main() -> Result<()> {
     color_eyre::install()?;
-    let _guard = RawModeGuard::enter()?;
+    install_panic_hook();
+
+    let _guard = Terminal::enter()?;
+    draw()?;
 
     loop {
-        let Event::Key(key) = event::read()? else {
-            continue;
-        };
-
-        if !key.is_press() {
-            continue;
-        }
-
-        match key.code {
-            KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
-            _ => {
-                print!("{key:?}\r\n");
-                io::stdout().flush()?;
-            }
+        match event::read()? {
+            Event::Key(key) if key.is_press() => match key.code {
+                KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
+                _ => {}
+            },
+            Event::Resize(_, _) => draw()?,
+            _ => {}
         }
     }
 

@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 2 课 · 干净的画布</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>第 2 课 · 干净的画布</h1>
+<p class="lesson-meta">kilo-rs 课程 · Lesson 0002 · 预计 30–40 分钟 · 需要动手写代码</p>
+
+<p class="lede">第 1 课的程序只会往终端里打印，退出后那些字还赖在屏幕上。这一课我们给它一整块
+<strong>独立的画布</strong>，学会<strong>一帧一帧地画屏幕</strong>，并且补上第 1 课留下的那个洞——
+让 panic 也能把终端还给你。</p>
+
+<div class="win">
+<p><span class="tag">本课成果</span></p>
+<ul>
+<li><code>cargo run</code>：程序占满整屏，空行显示 <code>~</code>，约 1/3 处显示欢迎语；</li>
+<li>拖动改变窗口大小，画面会<strong>自动重画</strong>适应新尺寸；</li>
+<li><kbd>Ctrl</kbd>+<kbd>Q</kbd> 退出后，你原来 shell 的内容原样回来（不是被一堆 <code>~</code> 覆盖）；</li>
+<li>即使 panic，报告也是<strong>干净排版</strong>的，终端毫发无损。</li>
+</ul>
+</div>
+
+<h2>要补的两个洞</h2>
+
+<p>第 1 课结束时，程序能接管终端、响应按键了，但有两个问题：</p>
+
+<ol>
+<li><strong>太吵</strong>：程序把内容直接打在当前屏幕上，退出后这些内容留在那里，污染了你的 shell。</li>
+<li><strong>panic 报告很难看</strong>：报告在 <code>Drop</code> 之前打印，那时还在 raw mode，<code>\n</code> 不回车，于是一路向右缩进成楼梯。</li>
+</ol>
+
+<h2>洞 1：备用屏幕（alternate screen）</h2>
+
+<p>终端其实有<strong>两块屏幕</strong>：正常屏幕（你和 shell 一直用的）和<strong>备用屏幕</strong>。
+终端里的 <code>vim</code>、<code>less</code> 都用备用屏幕工作。进入时切过去，退出时切回来——
+<strong>正常屏幕上的内容原封不动地恢复</strong>。这正是我们要的效果。</p>
+
+<p>crossterm 对应两个命令：<code>EnterAlternateScreen</code> / <code>LeaveAlternateScreen</code>。
+顺便用 <code>cursor::Hide</code> / <code>cursor::Show</code> 把光标藏起来（否则它会在画面上乱闪）。</p>
+
+<div class="callout">
+<p><span class="tag">设计</span> 「进备用屏幕」「开 raw mode」「藏光标」这三件事必须<strong>成对</strong>，
+所以它们理应由第 1 课那个守卫的升级版来管——我们把它从 <code>RawModeGuard</code> 改名成
+<code>Terminal</code>，它现在持有的是「全屏编辑状态」。</p>
+</div>
+
+<h2>洞 2：panic hook</h2>
+
+<p>Rust 允许你安装一个 <strong>panic hook</strong>：panic 发生、但在栈开始展开之前，这个函数会被调用。
+我们在这里<strong>先把终端恢复原状</strong>，再把信息交回给原来的 hook（<code>color-eyre</code> 设置的那个）
+去打印报告。这样报告就在正常屏幕上、用正常的换行打印了。</p>
+
+<pre><code>fn install_panic_hook() {
+    let hook = std::panic::take_hook();      // 拿到当前的 hook（color-eyre 的）
+    std::panic::set_hook(Box::new(move |info| {
+        restore();                            // 先救终端
+        hook(info);                           // 再让 color-eyre 打印
+    }));
+}</code></pre>
+
+<div class="warn">
+<p><span class="tag">顺序</span> 必须在 <code>color_eyre::install()</code> <strong>之后</strong>装这个 hook，
+才能「包住」它设置的 hook。装反了，color-eyre 会把我们的 hook 覆盖掉，报告又变乱。</p>
+</div>
+
+<details>
+<summary>看不太懂 <code>Box</code> 和 <code>move</code>？展开这里</summary>
+<p><strong><code>move</code></strong>：闭包默认<em>借用</em>它用到的外部变量。但这个闭包要存进全局、
+活得比函数长，借用会变成悬垂引用（编译器会报 <code>E0597</code>）；
+<code>move</code> 让它把 <code>hook</code> <em>移动</em>进自己内部，于是闭包拥有它、可以 <code>'static</code>。
+核心问题还是那句：<strong>这份数据该被谁拥有、活多久？</strong></p>
+<p><strong><code>Box</code></strong>：闭包的具体类型是编译器生成的匿名类型，写不出来。
+<code>set_hook</code> 要在全局存「任意一个函数」，所以用 trait object <code>dyn Fn(…)</code>
+把具体类型擦掉。而 <code>dyn</code> 的大小编译期未知（<code>E0277</code>），不能按值传递，
+必须放在指针后面——<code>Box&lt;dyn Fn(…)&gt;</code> 就是「堆上、独占、能自动释放」的那个指针。</p>
+<p><strong>需要掌握到什么程度</strong>：<code>move</code> 与 <code>Box</code> 是必须理解的基础
+（线程、错误对象、递归类型都会用到）；但这段 panic hook 的具体写法可以当模板，读懂即可，不必默写。</p>
+</details>
+
+<h2>把一帧「攒」出来：<code>queue!</code> 与 <code>execute!</code></h2>
+
+<p>每次往 <code>stdout</code> 写东西都是一次系统调用，很贵。画一帧要发很多命令（清屏、移动光标、打印……），
+所以 crossterm 提供了两种执行方式：</p>
+
+<table>
+<thead><tr><th>宏</th><th>行为</th><th>用在哪</th></tr></thead>
+<tbody>
+<tr><td><code>execute!</code></td><td>立即执行并 flush</td><td>一次性的开关，如进入/退出备用屏幕</td></tr>
+<tr><td><code>queue!</code></td><td>排队，等你手动 <code>flush()</code> 才一次性写出</td><td>画帧：攒一整帧，最后 <code>stdout.flush()</code></td></tr>
+</tbody>
+</table>
+
+<p>这就是 C 版 kilo 里那个 <code>abuf</code>（追加缓冲区）在现代 crossterm 里的对应物——
+只不过我们不用手写 <code>realloc</code> 了。</p>
+
+<h2>动手</h2>
+
+<div class="task">
+<p><span class="tag">任务</span> 把 <code>src/main.rs</code> 改成下面的样子</p>
+<p>先看一遍，理解每块在干什么，再亲手敲进去：</p>
+<pre><code>use std::io::{self, Write};
+
+use color_eyre::Result;
+use crossterm::{
+    cursor::{self, MoveTo},
+    event::{self, Event, KeyCode, KeyModifiers},
+    execute, queue,
+    style::Print,
+    terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
+};
+
+const VERSION: &amp;str = env!("CARGO_PKG_VERSION");
+
+/// 持有「全屏编辑」状态：raw mode + 备用屏幕 + 隐藏的光标。
+/// 它离开作用域时，终端会被恢复原状。
+struct Terminal;
+
+impl Terminal {
+    fn enter() -&gt; io::Result&lt;Self&gt; {
+        terminal::enable_raw_mode()?;
+
+        // 先构造守卫，再执行可能失败的命令：万一 execute! 失败，
+        // `guard` 会在提前返回时析构，raw mode 仍会被恢复。
+        let guard = Self;
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
+
+        Ok(guard)
+    }
+}
+
+impl Drop for Terminal {
+    fn drop(&amp;mut self) {
+        restore();
+    }
+}
+
+/// 把终端恢复原状。`Drop` 和 panic hook 共用这一份逻辑。
+fn restore() {
+    let mut stdout = io::stdout();
+    let _ = execute!(stdout, cursor::Show, LeaveAlternateScreen);
+    let _ = terminal::disable_raw_mode();
+}
+
+/// panic 时先恢复终端，再把信息交给原来的 hook 处理。
+///
+/// 必须在 `color_eyre::install()` **之后**调用，才能包住它设置的 hook。
+fn install_panic_hook() {
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        restore();
+        hook(info);
+    }));
+}
+
+fn main() -&gt; Result&lt;()&gt; {
+    color_eyre::install()?;
+    install_panic_hook();
+
+    let _terminal = Terminal::enter()?;
+    draw()?;
+
+    loop {
+        match event::read()? {
+            Event::Key(key) if key.is_press() =&gt; match key.code {
+                KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) =&gt; break,
+                _ =&gt; {}
+            },
+            Event::Resize(_, _) =&gt; draw()?,
+            _ =&gt; {}
+        }
+    }
+
+    Ok(())
+}
+
+/// 画一帧：整屏清空，空行画 `~`，在约 1/3 处显示欢迎语。
+fn draw() -&gt; io::Result&lt;()&gt; {
+    let (cols, rows) = terminal::size()?;
+    let mut stdout = io::stdout();
+
+    queue!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
+
+    for y in 0..rows {
+        if y == rows / 3 {
+            queue!(stdout, Print(welcome_line(cols)))?;
+        } else {
+            queue!(stdout, Print('~'))?;
+        }
+
+        // 最后一行之后不换行，否则会把整屏向上顶
+        if y + 1 &lt; rows {
+            queue!(stdout, Print("\r\n"))?;
+        }
+    }
+
+    queue!(stdout, MoveTo(0, 0))?;
+    stdout.flush()
+}
+
+fn welcome_line(cols: u16) -&gt; String {
+    let text = format!("~ Kilo editor -- version {VERSION}");
+    text.chars().take(cols as usize).collect()
+}</code></pre>
+</div>
+
+<h2>逐段拆解（只看这一课的新东西）</h2>
+
+<ul>
+<li><code>const VERSION: &amp;str = env!("CARGO_PKG_VERSION");</code>：<code>env!</code> 是
+  <strong>编译期</strong>读取，把 <code>Cargo.toml</code> 里的 <code>version</code> 直接烧进二进制。
+  不用像 C 版那样手写 <code>"0.0.1"</code>，也不会忘同步。</li>
+<li><strong>为什么 <code>let guard = Self;</code> 必须出现在 <code>execute!(…)?</code> 之前？</strong>
+  因为 <code>execute!</code> 可能失败，一旦失败就提前返回。如果那时还没有守卫，
+  就没人负责关掉已经打开的 raw mode——终端会坏。<strong>先造守卫，再做可能失败的事</strong>，
+  失败时守卫会自动析构并清理。这是上一课那条规则的延续。</li>
+<li><strong>结尾必须是 <code>Ok(guard)</code>，不能是 <code>Ok(Self)</code>。</strong>
+  <code>Ok(Self)</code> 会新造一个 <code>Terminal</code> 返回，而把 <code>guard</code> 留在函数里——
+  它会在函数退出时<strong>立刻析构</strong>，等于 raw mode 刚开就被关掉。编译器会报
+  <code>unused variable: guard</code>，这不是噪声，而是在提醒你守卫被丢弃了。</li>
+<li><code>restore()</code> 被 <code>Drop</code> 和 panic hook 共用：<strong>恢复逻辑只有一份</strong>，
+  不会出现「Drop 里改了、hook 里忘了改」的分裂。</li>
+<li><code>queue!</code> 攒命令、最后 <code>stdout.flush()</code> 一次性写出。注意 <code>draw</code> 里
+  <code>queue!</code> 用 <code>?</code> 提前返回时<strong>不需要</strong>手动恢复终端——守卫兜底。</li>
+<li><strong>最后一行后面不写 <code>\r\n</code></strong>：如果在屏幕最后一行换行，终端会把整屏向上滚动，
+  画面就错位了。所以用 <code>if y + 1 &lt; rows</code> 明确表达「不是最后一行才换行」——
+  比 <code>if y &gt; 0</code>（把换行放在下一行的开头）更贴合直觉。</li>
+<li><strong><code>text.chars().take(cols as usize).collect()</code></strong>：把文字截断到终端宽度。
+  读法是把三个迭代器适配器连起来：<code>.chars()</code> 产出 <code>char</code> →
+  <code>.take(n)</code> 最多取 n 个 → <code>.collect()</code> 收成一个 <code>String</code>
+  （目标类型由函数返回类型 <code>-&gt; String</code> 推导）。
+  为什么不用 <code>&amp;text[..cols]</code>？那是按<strong>字节</strong>切，<code>cols</code>
+  一旦落在多字节字符中间就会 panic；<code>.chars()</code> 数的是<strong>字符</strong>，永不 panic。
+  但字符数 ≠ 终端列宽（中文占 2 列），要彻底做对得等以后引入 <code>unicode-width</code>。</li>
+<li><code>Event::Resize(_, _) =&gt; draw()?</code>：终端尺寸变化会发来 <code>Resize</code> 事件，
+  重画一帧即可。窗口大小用 <code>terminal::size()</code>，返回 <code>(columns, rows)</code>。</li>
+</ul>
+
+<div class="task">
+<p><span class="tag">运行并观察</span></p>
+<pre><code>cargo run</code></pre>
+<ol>
+<li>整屏被接管：空行是 <code>~</code>，约 1/3 处有欢迎语。</li>
+<li><strong>拖动窗口边缘改变大小</strong>：画面会自动重画、铺满新尺寸。</li>
+<li>按 <kbd>Ctrl</kbd>+<kbd>Q</kbd>：退出后你敲 <code>cargo run</code> 之前的内容应该原样回来
+  （因为备用屏幕被切走了）。</li>
+</ol>
+<p>再跑 <code>cargo clippy --all-targets -- -D warnings</code>，确认没有告警。</p>
+</div>
+
+<div class="task">
+<p><span class="tag">挑战</span> 验证 panic hook 真的有用</p>
+<p>在 <code>let _terminal = Terminal::enter()?;</code> 后面临时加一行 <code>panic!("boom");</code>，
+<code>cargo run</code>。对比第 1 课的现象：这次 <code>color-eyre</code> 的报告应该<strong>排版正常</strong>，
+而且终端完全没有坏。原因就是 hook 先跑了 <code>restore()</code>。做完删掉这行。</p>
+</div>
+
+<details>
+<summary>加了 <code>panic!("boom")</code> 却看不到 panic 信息？</summary>
+<p>信息其实打印了，但打在了<strong>备用屏幕</strong>上，随后被「离开备用屏幕」一起抹掉了。
+这说明<strong>恢复发生在打印之后</strong>——我们的 hook 没有先执行，真正跑的是别的 hook（color-eyre 自己的或默认的）。</p>
+<p>按顺序检查：</p>
+<ol>
+<li><code>install_panic_hook();</code> 真的在 <code>main</code> 里被<strong>调用</strong>了吗？（定义 ≠ 调用）</li>
+<li>它在 <code>color_eyre::install()?;</code> <strong>之后</strong>吗？（否则会被覆盖）</li>
+<li>它在 <code>Terminal::enter()?</code> 和 <code>panic!</code> <strong>之前</strong>吗？（否则来不及）</li>
+</ol>
+<p>验证：在 hook 第一行加 <code>eprintln!("[hook] restore");</code>。看不到它，就说明这个 hook 没被安装。</p>
+</details>
+
+<h2>小测</h2>
+
+<div class="quiz">
+<p class="q">1. <code>EnterAlternateScreen</code> 的作用是什么？</p>
+<ul>
+<li>开一块独立画布，退出后恢复原来的屏幕内容</li>
+<li>清空当前屏幕，且原来的内容无法再恢复</li>
+<li>隐藏输入光标并冻结键盘输入事件</li>
+<li>切换终端到夜间配色以保护视力</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。备用屏幕是终端提供的第二块缓冲区，<code>vim</code> / <code>less</code> 都这么用。
+离开时正常屏幕的内容原样回来——所以它比单纯「清屏」更好。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">2. 画一帧时为什么用 <code>queue!</code> 而不是 <code>execute!</code>？</p>
+<ul>
+<li><code>queue!</code> 攒到 flush 一次性写，减少系统调用</li>
+<li><code>execute!</code> 不支持一次执行多个命令</li>
+<li><code>queue!</code> 会自动帮程序接管 Ctrl 组合键</li>
+<li><code>execute!</code> 会清空屏幕缓冲导致闪烁</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。<code>execute!</code> 每条命令都立即 flush；<code>queue!</code> 只是把字节写进缓冲，
+由最后那次 <code>stdout.flush()</code> 统一提交。帧越大，差距越明显。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">3. 为什么 <code>draw</code> 里最后一行后面不写 <code>\r\n</code>？</p>
+<ul>
+<li>在屏幕底行换行会把整屏向上滚动，导致错位</li>
+<li>否则光标位置会因为制表符而计算错误</li>
+<li>否则终端不会把缓冲区的命令真正刷出去</li>
+<li>raw mode 下不允许连续两次换行操作</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。所以换行要放在「行与行之间」（<code>if y &gt; 0</code>），而不是每行都追加。
+这也是为什么原版 kilo 会预留两行给状态栏——底行绝不能多写一个换行。</p>
+</details>
+</div>
+
+<h2>主要资料</h2>
+
+<ul class="ref-list">
+<li><strong>备用屏幕 / 光标</strong>：<a href="https://docs.rs/crossterm/0.29.0/crossterm/terminal/index.html">crossterm · terminal</a>、
+  <a href="https://docs.rs/crossterm/0.29.0/crossterm/cursor/index.html">crossterm · cursor</a>。</li>
+<li><strong>命令 API（execute vs queue）</strong>：<a href="https://docs.rs/crossterm/0.29.0/crossterm/#command-api">crossterm 文档 · Command API</a>。</li>
+<li><strong>panic hook</strong>：<a href="https://doc.rust-lang.org/std/panic/fn.set_hook.html">std::panic::set_hook</a>。</li>
+<li><strong>对应章节</strong>：<a href="https://www.flenker.blog/hecto-chapter-3/">hecto 第 3 章</a>（对照读）。</li>
+<li>速查：<a href="../reference/crossterm-terminal-basics.html">参考 · 终端基础与 crossterm API</a> ·
+  <a href="../reference/modern-rust-idioms.html">参考 · 现代 Rust 惯用法</a>。</li>
+</ul>
+
+<h2>我是你的老师，随时问</h2>
+
+<div class="callout">
+<p>为什么 <code>install_panic_hook</code> 里的闭包要 <code>move</code>、<code>Box::new</code> 又是干嘛的、
+<code>chars().take()</code> 和字节切片到底差在哪……任何卡住的地方直接问。下一个洞就是真正的编辑器了：
+<strong>打开文件、把每一行存起来、显示出来</strong>——你的第一段「数据结构」要登场了。</p>
+</div>
+
+<div class="lesson-nav">
+  <a class="prev" href="0001-raw-mode-and-events.html">← 第 1 课 · 接管终端</a>
+  <a class="next" href="#">第 3 课 · 打开并显示文件（待生成）</a>
+</div>
+
+<p class="footer-note">kilo-rs 课程 · Lesson 0002。总目录见 <a href="../MISSION.md">MISSION.md</a>。</p>
+
+</body>
+</html>

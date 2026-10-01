@@ -94,6 +94,12 @@ impl Drop for RawModeGuard {
 <code>let _ = …</code> 会<strong>立刻丢弃</strong>。守卫变量必须带名字。</p>
 </div>
 
+<div class="warn">
+<p><span class="tag">顺序</span> 守卫必须在「可能失败的操作」<strong>之前</strong>构造；
+成功时要把守卫<strong>移出去</strong>（<code>Ok(guard)</code>，不是 <code>Ok(Self)</code>），
+否则它会在函数里提前析构，等于清理没被推迟、资源刚开就被关。</p>
+</div>
+
 <h2>4. 错误处理</h2>
 
 <ul>
