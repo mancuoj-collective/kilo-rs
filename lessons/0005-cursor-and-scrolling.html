@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 5 课 · 光标与滚动</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>第 5 课 · 光标与滚动</h1>
+<p class="lesson-meta">kilo-rs 课程 · Lesson 0005 · 预计 35–45 分钟 · 加功能 + 第一次写测试</p>
+
+<p class="lede">文件能显示了，但你只能看第一屏，而且没有光标。<br>
+这一课让光标动起来、让画面跟着它滚动——同时第一次把「一堆相关状态」收进一个结构
+<code>Editor</code>，并<strong>为它写单元测试</strong>。还记得第 4 课为什么拆 <code>lib.rs</code> 吗？回报来了。</p>
+
+<div class="win">
+<p><span class="tag">本课成果</span></p>
+<ul>
+<li>方向键移动光标，画面<strong>自动滚动</strong>跟随；</li>
+<li><kbd>Home</kbd>/<kbd>End</kbd> 跳到行首 / 行尾；</li>
+<li>光标落在屏幕上的正确位置（终端光标可见）；</li>
+<li>新增 <code>src/editor.rs</code> 和 <strong>3 个单元测试</strong>——不启动终端就能验证逻辑。</li>
+</ul>
+</div>
+
+<h2>核心概念：文件坐标 vs 屏幕坐标</h2>
+
+<p>文件可能比屏幕大，所以「光标在哪」和「光标画在哪」是两件事，中间隔着一个<strong>视口</strong>：</p>
+
+<table>
+<thead><tr><th>量</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td><code>cx</code> / <code>cy</code></td><td>光标在<strong>文件</strong>里的位置（列、行）。</td></tr>
+<tr><td><code>rowoff</code> / <code>coloff</code></td><td><strong>视口</strong>左上角对应文件的哪一行、哪一列。</td></tr>
+<tr><td>屏幕位置</td><td><code>cy - rowoff</code> 行、<code>cx - coloff</code> 列。</td></tr>
+</tbody>
+</table>
+
+<p>每次按键后调用一次 <code>scroll</code>，保证光标落在可视范围内；渲染时用视口偏移去取内容。</p>
+
+<div class="callout">
+<p><span class="tag">一个细节</span> 上下移动时，如果新行更短，列要<strong>夹回行尾</strong>。
+比如在第 5 列按 ↓ 落到一条只有 3 个字符的行，光标应停在列 3。原版 kilo 就是这么做的。</p>
+</div>
+
+<div class="callout">
+<p><span class="tag">scroll 的公式怎么来的</span> 视口在文件里覆盖 <code>[rowoff, rowoff + rows)</code>。</p>
+<ul>
+<li>光标跑到视口<strong>上方</strong>（<code>cy &lt; rowoff</code>）→ 让视口顶到光标：<code>rowoff = cy</code>（光标落在屏幕第 0 行，贴顶）。</li>
+<li>光标跑到视口<strong>下方</strong>（<code>cy &gt;= rowoff + rows</code>）→ 让光标落在屏幕最后一行：
+  <code>rowoff = cy - rows + 1</code>。<code>+1</code> 是因为窗口有 <code>rows</code> 格、最后一格编号是 <code>rows - 1</code>。</li>
+</ul>
+<p>水平方向（<code>cx</code>/<code>coloff</code>/<code>cols</code>）同理。跑完后必有
+<code>rowoff &lt;= cy &lt; rowoff + rows</code> 与 <code>coloff &lt;= cx &lt; coloff + cols</code>，
+所以 <code>cy - rowoff</code>、<code>cx - coloff</code> 一定落在屏幕内——这就是 <code>draw</code> 敢直接用它的原因。</p>
+</div>
+
+<h2>为什么现在收进结构</h2>
+
+<p>上一课状态还是局部变量，现在一下多出 4 个（<code>cx</code>/<code>cy</code>/<code>rowoff</code>/<code>coloff</code>），
+而且它们<strong>总是一起被读写</strong>——这就是「接缝清晰了」。把它们装进 <code>Editor</code>，
+行为（移动、滚动）也归它。关键点：<strong><code>Editor</code> 完全不碰终端</strong>。</p>
+
+<div class="win">
+<p><span class="tag">此刻兑现</span> 因为 <code>Editor</code> 不知道终端的存在，它可以直接被单元测试：
+给定一串操作，断言光标/视口。这正是「把逻辑放进库」换来的东西——<strong>不启动界面也能测核心逻辑</strong>。</p>
+</div>
+
+<h2>动手</h2>
+
+<div class="task">
+<p><span class="tag">任务 1</span> 新建 <code>src/editor.rs</code></p>
+<pre><code>//! 编辑器的可编辑状态：光标位置与视口滚动。
+//!
+//! 这一层**不碰终端**：它只维护「光标在哪、屏幕从哪一行/列开始看」。
+//! 因为不依赖终端，它可以直接被单元测试——这正是把逻辑放进库的回报。
+
+/// 光标的移动方式。
+#[derive(Clone, Copy)]
+pub enum Move {
+    Left,
+    Right,
+    Up,
+    Down,
+    Home,
+    End,
+}
+
+/// 编辑器状态：缓冲区内容 + 光标 + 视口。
+pub struct Editor {
+    lines: Vec&lt;String&gt;,
+    /// 光标位置，以字符计：`cx` 是列，`cy` 是行。
+    cx: usize,
+    cy: usize,
+    /// 视口左上角对应文件的 `(列, 行)`。
+    coloff: usize,
+    rowoff: usize,
+}
+
+impl Editor {
+    /// 用给定的行创建一个新编辑器，光标与视口都在左上角。
+    #[must_use]
+    pub fn new(lines: Vec&lt;String&gt;) -&gt; Self {
+        Self {
+            lines,
+            cx: 0,
+            cy: 0,
+            coloff: 0,
+            rowoff: 0,
+        }
+    }
+
+    /// 缓冲区内容，供渲染读取。
+    #[must_use]
+    pub fn lines(&amp;self) -&gt; &amp;[String] {
+        &amp;self.lines
+    }
+
+    /// 光标在文件中的位置 `(列, 行)`。
+    #[must_use]
+    pub fn cursor(&amp;self) -&gt; (usize, usize) {
+        (self.cx, self.cy)
+    }
+
+    /// 视口左上角在文件中的位置 `(列, 行)`。
+    #[must_use]
+    pub fn viewport(&amp;self) -&gt; (usize, usize) {
+        (self.coloff, self.rowoff)
+    }
+
+    /// 按方向移动光标。
+    pub fn move_cursor(&amp;mut self, direction: Move) {
+        let numrows = self.lines.len();
+        match direction {
+            Move::Left =&gt; {
+                if self.cx &gt; 0 {
+                    self.cx -= 1;
+                } else if self.cy &gt; 0 {
+                    self.cy -= 1;
+                    self.cx = self.current_line_len();
+                }
+            }
+            Move::Right =&gt; {
+                if self.cy &lt; numrows {
+                    if self.cx &lt; self.current_line_len() {
+                        self.cx += 1;
+                    } else {
+                        self.cy += 1;
+                        self.cx = 0;
+                    }
+                }
+            }
+            Move::Up =&gt; {
+                if self.cy &gt; 0 {
+                    self.cy -= 1;
+                }
+            }
+            Move::Down =&gt; {
+                if self.cy &lt; numrows {
+                    self.cy += 1;
+                }
+            }
+            Move::Home =&gt; self.cx = 0,
+            Move::End =&gt; self.cx = self.current_line_len(),
+        }
+
+        // 移到更短的行之后，把列夹回行尾
+        self.cx = self.cx.min(self.current_line_len());
+    }
+
+    /// 调整视口，让光标始终可见。
+    pub fn scroll(&amp;mut self, rows: usize, cols: usize) {
+        if self.cy &lt; self.rowoff {
+            self.rowoff = self.cy;
+        }
+        if self.cy &gt;= self.rowoff + rows {
+            self.rowoff = self.cy - rows + 1;
+        }
+        if self.cx &lt; self.coloff {
+            self.coloff = self.cx;
+        }
+        if self.cx &gt;= self.coloff + cols {
+            self.coloff = self.cx - cols + 1;
+        }
+    }
+
+    /// 某一行的字符数；行不存在时为 0。
+    fn line_len(&amp;self, cy: usize) -&gt; usize {
+        self.lines.get(cy).map_or(0, |line| line.chars().count())
+    }
+
+    /// 光标所在行的字符数（光标在文件末尾的空行上时为 0）。
+    fn current_line_len(&amp;self) -&gt; usize {
+        self.line_len(self.cy)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn editor() -&gt; Editor {
+        Editor::new(vec![String::from("hello"), String::from("world!!")])
+    }
+
+    #[test]
+    fn right_moves_within_a_line() {
+        let mut e = editor();
+        e.move_cursor(Move::Right);
+        assert_eq!(e.cursor(), (1, 0));
+    }
+
+    #[test]
+    fn moving_up_clamps_column_to_line_end() {
+        let mut e = editor();
+        e.move_cursor(Move::End); // 第一行末尾：列 5
+        e.move_cursor(Move::Down);
+        assert_eq!(e.cursor(), (5, 1));
+        e.move_cursor(Move::Up);
+        assert_eq!(e.cursor(), (5, 0));
+    }
+
+    #[test]
+    fn scroll_keeps_cursor_visible() {
+        let mut e = Editor::new((0..10).map(|i| format!("line {i}")).collect());
+        e.move_cursor(Move::Down);
+        e.move_cursor(Move::Down);
+        e.move_cursor(Move::Down); // cy = 3
+        e.scroll(3, 20); // 视口只有 3 行高
+        assert_eq!(e.viewport(), (0, 1)); // rowoff = 3 - 3 + 1
+    }
+}</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 2</span> 更新 <code>src/lib.rs</code></p>
+<p>声明 <code>editor</code> 模块，用 <code>Editor</code> 驱动事件循环，渲染时按视口偏移取内容：</p>
+<pre><code>//! kilo-rs：一个用 Rust 重写的 kilo 文本编辑器。
+//!
+//! 逻辑放在库里（便于集成测试），`main.rs` 只是一层薄外壳。
+//! 终端生命周期在 [`tui`]，编辑器状态在 [`editor`]；
+//! 渲染与事件循环暂时留在本文件，之后会拆成 `ui` / `app`。
+
+pub mod editor;
+pub mod tui;
+
+use std::{
+    env, fs,
+    io::{self, Write},
+};
+
+use color_eyre::Result;
+use crossterm::{
+    cursor::{self, MoveTo},
+    event::{self, Event, KeyCode, KeyModifiers},
+    queue,
+    style::Print,
+    terminal::{self, Clear, ClearType},
+};
+
+use crate::{
+    editor::{Editor, Move},
+    tui::Terminal,
+};
+
+const NAME: &amp;str = env!("CARGO_PKG_NAME");
+const VERSION: &amp;str = env!("CARGO_PKG_VERSION");
+
+/// 运行编辑器：读取文件、接管终端、进入事件循环。
+///
+/// # Errors
+///
+/// 读文件失败或终端操作失败时返回错误。
+pub fn run() -&gt; Result&lt;()&gt; {
+    // 读取命令行里的文件名；没有就开一个空 buffer
+    let lines = match env::args().nth(1) {
+        Some(path) =&gt; fs::read_to_string(&amp;path)?
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+        None =&gt; Vec::new(),
+    };
+
+    let mut editor = Editor::new(lines);
+
+    let _guard = Terminal::enter()?;
+    draw(&amp;mut editor)?;
+
+    loop {
+        match event::read()? {
+            Event::Key(key) if key.is_press() =&gt; match key.code {
+                KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) =&gt; break,
+                KeyCode::Up =&gt; editor.move_cursor(Move::Up),
+                KeyCode::Down =&gt; editor.move_cursor(Move::Down),
+                KeyCode::Left =&gt; editor.move_cursor(Move::Left),
+                KeyCode::Right =&gt; editor.move_cursor(Move::Right),
+                KeyCode::Home =&gt; editor.move_cursor(Move::Home),
+                KeyCode::End =&gt; editor.move_cursor(Move::End),
+                _ =&gt; {}
+            },
+            _ =&gt; {}
+        }
+        draw(&amp;mut editor)?;
+    }
+
+    Ok(())
+}
+
+/// 画一帧：按视口偏移渲染文件，并把终端光标放到编辑器光标处。
+///
+/// 会先调用 [`Editor::scroll`] 调整视口，因此需要 `&amp;mut Editor`。
+fn draw(editor: &amp;mut Editor) -&gt; io::Result&lt;()&gt; {
+    let (cols, rows) = terminal::size()?;
+    let width = cols as usize;
+    let height = rows as usize;
+
+    editor.scroll(height, width);
+
+    let (coloff, rowoff) = editor.viewport();
+    let (cx, cy) = editor.cursor();
+    let lines = editor.lines();
+
+    let mut stdout = io::stdout();
+    queue!(stdout, cursor::Hide, Clear(ClearType::All), MoveTo(0, 0))?;
+
+    for y in 0..height {
+        let filerow = rowoff + y;
+        if let Some(line) = lines.get(filerow) {
+            let text: String = line.chars().skip(coloff).take(width).collect();
+            queue!(stdout, Print(text))?;
+        } else if lines.is_empty() &amp;&amp; y == height / 3 {
+            queue!(stdout, Print(welcome_line(cols)))?;
+        } else {
+            queue!(stdout, Print('~'))?;
+        }
+
+        if y + 1 &lt; height {
+            queue!(stdout, Print("\r\n"))?;
+        }
+    }
+
+    // 视口保证光标落在屏幕内，这两个转换不会失败。
+    let cursor_col = u16::try_from(cx - coloff).expect("光标列应落在视口内");
+    let cursor_row = u16::try_from(cy - rowoff).expect("光标行应落在视口内");
+    queue!(stdout, MoveTo(cursor_col, cursor_row), cursor::Show)?;
+    stdout.flush()
+}
+
+/// 把一段文字截断到终端宽度（按字符，不按字节）。
+fn truncate(text: &amp;str, width: u16) -&gt; String {
+    text.chars().take(width as usize).collect()
+}
+
+fn welcome_line(cols: u16) -&gt; String {
+    let text = format!("~ {NAME} editor -- version {VERSION}");
+    truncate(&amp;text, cols)
+}</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 3</span> 运行 + 测试 + clippy</p>
+<pre><code>cargo run -- kilo.c        # 用方向键上下移动，看画面跟随滚动
+cargo test                 # 3 个单元测试，不启动终端
+cargo clippy --all-targets -- -D warnings</code></pre>
+</div>
+
+<h2>逐段拆解</h2>
+
+<ul>
+<li><strong><code>Editor</code> 不 import 任何 crossterm</strong>：这是有意的。它只管状态，
+  「按键怎么映射到移动」由 <code>lib.rs</code> 的事件循环负责。于是 <code>Editor</code> 可测、可复用、
+  以后换 TUI 库也不受影响。</li>
+<li><code>Move</code> 派生 <code>Copy</code>：它是个小的「标签」枚举，按值传递最自然。
+  不派生 <code>Copy</code> 的话，<code>clippy::pedantic</code> 会提示「按值传入但没消费」，让你改成引用——
+  一个不该按引用传的值类型反而被建议传引用，就是这个 lint 在提醒你补 <code>Copy</code>。</li>
+<li>getter 上的 <code>#[must_use]</code>：<code>clippy::pedantic</code> 要求公开的「返回值的函数」标注
+  <code>#[must_use]</code>——因为忽略 <code>cursor()</code> 的返回值多半是写错了。</li>
+<li><code>line_len</code> 用 <code>chars().count()</code> 而不是 <code>len()</code>：
+  <code>cx</code> 是<strong>字符</strong>列，不是字节列。这跟第 2 课 <code>truncate</code> 是同一件事。</li>
+<li><code>Move::Right</code> 在行尾时跳到下一行行首：这是编辑器的常见行为，也让「按右箭头穿过整个文件」成立。</li>
+<li><code>scroll</code> 的四条 <code>if</code>：把光标夹进 <code>[rowoff, rowoff + rows)</code> 与
+  <code>[coloff, coloff + cols)</code>。之后 <code>cursor_col = cx - coloff</code> 必然落在屏幕内，
+  所以那句 <code>try_from</code> 不会失败——用 <code>unwrap_or</code> 是为了不 panic，也不需要 <code>unsafe</code> 假设。</li>
+<li><code>draw</code> 需要 <code>&amp;mut Editor</code>，因为它顺手调用了 <code>scroll</code>（调整视口属于「渲染前的一次状态更新」）。
+  以后拆 <code>ui.rs</code> 时，我们会把「滚动」和「纯渲染」分得更干净。</li>
+</ul>
+
+<div class="callout">
+<p><span class="tag">事件循环的形状</span> 每轮固定是：<strong>读事件 → 按事件改状态 → 无条件重画一帧</strong>。
+「确定视口」就是 <code>draw</code> 开头的 <code>editor.scroll(...)</code>。</p>
+<ul>
+<li>两个 <code>_ =&gt; {}</code> 各管一层：<strong>内层</strong>忽略还没处理的按键（如字母），
+  <strong>外层</strong>忽略非按键事件（<code>Resize</code>、鼠标…）。</li>
+<li><code>break</code> 直接跳出 <code>loop</code>，<strong>跳过</strong>本轮的 <code>draw</code>——要退出了，没必要再画。</li>
+<li><code>Resize</code> 虽被忽略，但 <code>draw</code> 在 <code>match</code> 之后无条件执行，所以它照样会按新尺寸重画。
+  这就是窗口变化能自适应的原因。</li>
+</ul>
+</div>
+
+<h2>小测</h2>
+
+<div class="quiz">
+<p class="q">1. 光标画在屏幕第几行，由什么决定？</p>
+<ul>
+<li><code>cy - rowoff</code></li>
+<li><code>cy + rowoff</code></li>
+<li><code>cy</code> 本身</li>
+<li><code>rowoff - cy</code></li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。视口左上角对应文件的第 <code>rowoff</code> 行，所以文件第 <code>cy</code> 行在屏幕上是第
+<code>cy - rowoff</code> 行。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">2. <code>Editor</code> 为什么不 import crossterm？</p>
+<ul>
+<li>为了让它能脱离终端被测试</li>
+<li>因为 crossterm 不允许被库引用</li>
+<li>因为 <code>Move</code> 枚举无法携带 crossterm 类型</li>
+<li>为了减小编译出来的二进制体积</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。状态层不依赖终端，就能在普通测试里「喂操作、断言状态」，
+不需要 pty、不需要真实屏幕。这就是深模块 + 可测试的核心价值。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">3. 在一条长行的第 8 列按 ↓ 到一条只有 5 个字符的行，光标会到哪？</p>
+<ul>
+<li>列 5，被夹回行尾</li>
+<li>列 8，保持不变</li>
+<li>列 0，回到行首</li>
+<li>列 5 然后自动换到下一行</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。移动结束后统一做 <code>cx.min(current_line_len())</code>，
+把列夹进当前行的范围。这是「光标不能超过行尾」这条不变式的落点。</p>
+</details>
+</div>
+
+<h2>主要资料</h2>
+<ul class="ref-list">
+<li>对应章节：<a href="https://viewsourcecode.org/snaptoken/kilo/03.rawInputAndOutput.html">snaptoken 第 3 章</a>
+  （光标移动与滚动）、<a href="https://www.flenker.blog/hecto-chapter-4/">hecto 第 4 章</a>。</li>
+<li><code>clippy::must_use_candidate</code>：<a href="https://rust-lang.github.io/rust-clippy/master/index.html#must_use_candidate">文档</a>。</li>
+<li>本课程：<a href="../reference/modern-rust-idioms.html">现代 Rust 惯用法</a> ·
+  <a href="../reference/architecture.html">架构与文件结构</a>。</li>
+</ul>
+
+<h2>我是你的老师，随时问</h2>
+
+<div class="callout">
+<p><code>#[must_use]</code> 到底什么时候该加、为什么 <code>Move</code> 需要 <code>Copy</code>、
+<code>scroll</code> 的公式怎么推、为什么要写单元测试而不是手动试……任何卡住的地方直接问。
+下一课开始真正<strong>编辑</strong>：插入字符、回车换行、退格删除——那时 <code>Editor</code>
+会长出修改缓冲区的方法，也是借用检查器开始上强度的地方。</p>
+</div>
+
+<div class="lesson-nav">
+  <a class="prev" href="0004-first-refactor.html">← 第 4 课 · 第一次重构</a>
+  <a class="next" href="#">第 6 课 · 编辑（插入 / 回车 / 退格）与保存（待生成）</a>
+</div>
+
+<p class="footer-note">kilo-rs 课程 · Lesson 0005。总目录见 <a href="../MISSION.md">MISSION.md</a>。</p>
+
+</body>
+</html>
