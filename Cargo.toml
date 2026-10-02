@@ -7,10 +7,10 @@ rust-version = "1.85"
 [dependencies]
 color-eyre = "0.6.5"
 crossterm = "0.29.0"
+unicode-width = "0.2"
 
-# 这就是本项目对「现代 Rust 写法」的强制约定：
-# unsafe 一律禁止，clippy 的 all + pedantic 作为底线。
-# 参考 Apollo《Rust Best Practices》第 2 章。
+# Project-wide rules for "modern Rust": no unsafe, and clippy's all + pedantic
+# as the baseline. See Apollo's Rust Best Practices, chapter 2.
 [lints.rust]
 unsafe_code = "forbid"
 

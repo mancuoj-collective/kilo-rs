@@ -35,7 +35,7 @@
 
 use crossterm::terminal;
 
-/// 进入 raw mode，离开作用域时自动恢复（正常返回 / `?` / panic 都会触发）。
+/// Enters raw mode; restores it when dropped (normal return / `?` / panic).
 struct RawModeGuard;
 
 impl RawModeGuard {
@@ -47,12 +47,12 @@ impl RawModeGuard {
 
 impl Drop for RawModeGuard {
     fn drop(&amp;mut self) {
-        // Drop 不能 panic：忽略错误，避免二次 panic 导致 abort
+        // `Drop` must not panic: ignore the error to avoid a double-panic abort
         let _ = terminal::disable_raw_mode();
     }
 }
 
-// 用法：绑定必须有名字（`_` 会立刻析构）
+// Usage: the binding needs a name (`_` drops immediately)
 let _guard = RawModeGuard::enter()?;</code></pre>
 
 <div class="warn">
@@ -66,16 +66,16 @@ let _guard = RawModeGuard::enter()?;</code></pre>
 
 loop {
     let Event::Key(key) = event::read()? else {
-        continue; // Resize 等非键盘事件，跳过
+        continue; // e.g. Resize: skip non-keyboard events
     };
 
     if !key.is_press() {
-        continue; // Windows 会发松开事件；macOS/Linux 默认只有按下
+        continue; // Windows sends release events; macOS/Linux press-only by default
     }
 
     match key.code {
         KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) =&gt; break,
-        _ =&gt; { /* 处理其他按键 */ }
+        _ =&gt; { /* handle other keys */ }
     }
 }</code></pre>
 
@@ -119,7 +119,7 @@ loop {
 
 fn main() -&gt; Result&lt;()&gt; {
     color_eyre::install()?;
-    // 任何 io::Error 都能用 ? 自动转成 Report
+    // Any io::Error auto-converts to a Report via `?`
     Ok(())
 }</code></pre>
 

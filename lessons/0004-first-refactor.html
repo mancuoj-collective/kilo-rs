@@ -58,10 +58,10 @@
 <div class="task">
 <p><span class="tag">任务 1</span> 新建 <code>src/tui.rs</code></p>
 <p>把 <code>Terminal</code>、<code>restore</code>、<code>install_panic_hook</code> 原样剪到这里：</p>
-<pre><code>//! 终端生命周期管理。
+<pre><code>//! Terminal lifecycle management.
 //!
-//! 把「raw mode、备用屏幕、光标」这些必须成对开关的操作封装成 [`Terminal`] 守卫，
-//! 并用 [`install_panic_hook`] 保证 panic 时也会恢复终端。
+//! Wraps the must-be-paired operations (raw mode, alternate screen, cursor) in a
+//! [`Terminal`] guard, and restores the terminal on panic via [`install_panic_hook`].
 
 use std::io;
 
@@ -71,22 +71,24 @@ use crossterm::{
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-/// 全屏编辑状态的守卫。
+/// Guard for full-screen editing state.
 ///
-/// 持有它期间，终端处于 raw mode、备用屏幕上、光标隐藏；它被丢弃时恢复原状——
-/// 无论是正常返回、`?` 提前返回，还是 panic 展开。
+/// While held, the terminal is in raw mode, on the alternate screen, with the cursor
+/// hidden; dropping it restores the terminal — on a normal return, an early `?`
+/// return, or a panic unwind.
 pub struct Terminal;
 
 impl Terminal {
-    /// 进入全屏编辑状态。
+    /// Enters full-screen editing state.
     ///
     /// # Errors
     ///
-    /// 终端不可用时返回底层的 [`io::Error`]。
+    /// Returns the underlying [`io::Error`] if the terminal is unavailable.
     pub fn enter() -&gt; io::Result&lt;Self&gt; {
         terminal::enable_raw_mode()?;
 
-        // 先构造守卫，再执行可能失败的命令：失败时 guard 会析构并恢复 raw mode。
+        // Build the guard first; if the command below fails, `guard` drops and raw
+        // mode is restored.
         let guard = Self;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
@@ -101,9 +103,10 @@ impl Drop for Terminal {
     }
 }
 
-/// 安装一个 panic hook：先恢复终端，再把信息交回原来的 hook 打印。
+/// Installs a panic hook that restores the terminal, then hands off to the
+/// previous hook.
 ///
-/// 必须在设置好其它 hook（例如 `color_eyre::install`）**之后**调用。
+/// Must be called *after* other hooks (e.g. `color_eyre::install`) are set.
 pub fn install_panic_hook() {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -112,7 +115,7 @@ pub fn install_panic_hook() {
     }));
 }
 
-/// 恢复终端原状。`Drop` 与 panic hook 共用这一份逻辑。
+/// Restores the terminal. Shared by `Drop` and the panic hook.
 fn restore() {
     let mut stdout = io::stdout();
     let _ = execute!(stdout, cursor::Show, LeaveAlternateScreen);
@@ -124,11 +127,11 @@ fn restore() {
 <p><span class="tag">任务 2</span> 新建 <code>src/lib.rs</code></p>
 <p>把 <code>main</code> 里的<strong>逻辑</strong>（读文件、事件循环、渲染）搬过来，改名成 <code>run</code>，
 并声明 <code>tui</code> 模块：</p>
-<pre><code>//! kilo-rs：一个用 Rust 重写的 kilo 文本编辑器。
+<pre><code>//! kilo-rs: a text editor rewritten from kilo in Rust.
 //!
-//! 逻辑放在库里（便于集成测试），`main.rs` 只是一层薄外壳。
-//! 目前只有终端生命周期被拆成 [`tui`] 模块；随着功能增长，
-//! 这里的 `run` / `draw` 会进一步拆成 `app`、`ui`、`document`、`row`、`syntax`。
+//! Logic lives in the library (so integration tests can reach it); `main.rs` is a thin
+//! shell. Only the terminal lifecycle is split into [`tui`] so far; as it grows, `run`
+//! / `draw` here will split into `app`, `ui`, `document`, `row`, `syntax`.
 
 pub mod tui;
 
@@ -151,13 +154,13 @@ use crate::tui::Terminal;
 const NAME: &amp;str = env!("CARGO_PKG_NAME");
 const VERSION: &amp;str = env!("CARGO_PKG_VERSION");
 
-/// 运行编辑器：读取文件、接管终端、进入事件循环。
+/// Runs the editor: read the file, take over the terminal, enter the event loop.
 ///
 /// # Errors
 ///
-/// 读文件失败或终端操作失败时返回错误。
+/// Returns an error if reading the file or a terminal operation fails.
 pub fn run() -&gt; Result&lt;()&gt; {
-    // 读取命令行里的文件名；没有就开一个空 buffer
+    // Read the file name from argv; with no argument, start with an empty buffer.
     let lines = match env::args().nth(1) {
         Some(path) =&gt; fs::read_to_string(&amp;path)?
             .lines()
@@ -183,7 +186,8 @@ pub fn run() -&gt; Result&lt;()&gt; {
     Ok(())
 }
 
-/// 画一帧：文件的前若干行，其余用 `~` 补满；空文件显示欢迎语。
+/// Draws one frame: the first lines of the file, padded with `~`; the welcome
+/// line for an empty file.
 fn draw(lines: &amp;[String]) -&gt; io::Result&lt;()&gt; {
     let (cols, rows) = terminal::size()?;
     let mut stdout = io::stdout();
@@ -208,7 +212,7 @@ fn draw(lines: &amp;[String]) -&gt; io::Result&lt;()&gt; {
     stdout.flush()
 }
 
-/// 把一段文字截断到终端宽度（按字符，不按字节）。
+/// Truncates text to the terminal width (by chars, not bytes).
 fn truncate(text: &amp;str, width: u16) -&gt; String {
     text.chars().take(width as usize).collect()
 }
@@ -222,13 +226,13 @@ fn welcome_line(cols: u16) -&gt; String {
 <div class="task">
 <p><span class="tag">任务 3</span> 把 <code>src/main.rs</code> 削成薄外壳</p>
 <p>只留初始化和调用：</p>
-<pre><code>//! `kilo` 二进制入口：初始化 + 调用库，不含业务逻辑。
+<pre><code>//! `kilo` binary entry point: setup + call into the library; no business logic.
 
 use color_eyre::Result;
 
 fn main() -&gt; Result&lt;()&gt; {
     color_eyre::install()?;
-    // 必须在 color_eyre::install() 之后，才能包住它设置的 panic hook。
+    // Must come after color_eyre::install() to wrap the panic hook it sets.
     kilo::tui::install_panic_hook();
     kilo::run()
 }</code></pre>

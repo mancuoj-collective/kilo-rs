@@ -72,12 +72,13 @@
 
 <div class="task">
 <p><span class="tag">任务 1</span> 新建 <code>src/editor.rs</code></p>
-<pre><code>//! 编辑器的可编辑状态：光标位置与视口滚动。
+<pre><code>//! Editable editor state: cursor position and viewport scrolling.
 //!
-//! 这一层**不碰终端**：它只维护「光标在哪、屏幕从哪一行/列开始看」。
-//! 因为不依赖终端，它可以直接被单元测试——这正是把逻辑放进库的回报。
+//! This layer never touches the terminal: it only tracks where the cursor is and which
+//! row/column the screen starts at. Because it doesn't depend on the terminal, it can be
+//! unit-tested directly — the payoff of putting logic in a library.
 
-/// 光标的移动方式。
+/// A cursor movement direction.
 #[derive(Clone, Copy)]
 pub enum Move {
     Left,
@@ -88,19 +89,19 @@ pub enum Move {
     End,
 }
 
-/// 编辑器状态：缓冲区内容 + 光标 + 视口。
+/// Editor state: buffer contents, cursor, and viewport.
 pub struct Editor {
     lines: Vec&lt;String&gt;,
-    /// 光标位置，以字符计：`cx` 是列，`cy` 是行。
+    /// Cursor position in chars: `cx` is the column, `cy` the row.
     cx: usize,
     cy: usize,
-    /// 视口左上角对应文件的 `(列, 行)`。
+    /// Top-left of the viewport, as `(column, row)` in the file.
     coloff: usize,
     rowoff: usize,
 }
 
 impl Editor {
-    /// 用给定的行创建一个新编辑器，光标与视口都在左上角。
+    /// Creates a new editor from the given lines; cursor and viewport start at the top-left.
     #[must_use]
     pub fn new(lines: Vec&lt;String&gt;) -&gt; Self {
         Self {
@@ -112,25 +113,25 @@ impl Editor {
         }
     }
 
-    /// 缓冲区内容，供渲染读取。
+    /// Buffer contents, for rendering.
     #[must_use]
     pub fn lines(&amp;self) -&gt; &amp;[String] {
         &amp;self.lines
     }
 
-    /// 光标在文件中的位置 `(列, 行)`。
+    /// Cursor position in the file, as `(column, row)`.
     #[must_use]
     pub fn cursor(&amp;self) -&gt; (usize, usize) {
         (self.cx, self.cy)
     }
 
-    /// 视口左上角在文件中的位置 `(列, 行)`。
+    /// Top-left of the viewport in the file, as `(column, row)`.
     #[must_use]
     pub fn viewport(&amp;self) -&gt; (usize, usize) {
         (self.coloff, self.rowoff)
     }
 
-    /// 按方向移动光标。
+    /// Moves the cursor in the given direction.
     pub fn move_cursor(&amp;mut self, direction: Move) {
         let numrows = self.lines.len();
         match direction {
@@ -166,11 +167,11 @@ impl Editor {
             Move::End =&gt; self.cx = self.current_line_len(),
         }
 
-        // 移到更短的行之后，把列夹回行尾
+        // Moving to a shorter line: clamp the column to the line end.
         self.cx = self.cx.min(self.current_line_len());
     }
 
-    /// 调整视口，让光标始终可见。
+    /// Adjusts the viewport so the cursor stays visible.
     pub fn scroll(&amp;mut self, rows: usize, cols: usize) {
         if self.cy &lt; self.rowoff {
             self.rowoff = self.cy;
@@ -186,12 +187,12 @@ impl Editor {
         }
     }
 
-    /// 某一行的字符数；行不存在时为 0。
+    /// Number of chars in row `cy`; 0 if the row doesn't exist.
     fn line_len(&amp;self, cy: usize) -&gt; usize {
         self.lines.get(cy).map_or(0, |line| line.chars().count())
     }
 
-    /// 光标所在行的字符数（光标在文件末尾的空行上时为 0）。
+    /// Number of chars in the cursor's row (0 on the empty line past EOF).
     fn current_line_len(&amp;self) -&gt; usize {
         self.line_len(self.cy)
     }
@@ -215,7 +216,7 @@ mod tests {
     #[test]
     fn moving_up_clamps_column_to_line_end() {
         let mut e = editor();
-        e.move_cursor(Move::End); // 第一行末尾：列 5
+        e.move_cursor(Move::End); // end of the first line: column 5
         e.move_cursor(Move::Down);
         assert_eq!(e.cursor(), (5, 1));
         e.move_cursor(Move::Up);
@@ -228,7 +229,7 @@ mod tests {
         e.move_cursor(Move::Down);
         e.move_cursor(Move::Down);
         e.move_cursor(Move::Down); // cy = 3
-        e.scroll(3, 20); // 视口只有 3 行高
+        e.scroll(3, 20); // viewport is only 3 rows tall
         assert_eq!(e.viewport(), (0, 1)); // rowoff = 3 - 3 + 1
     }
 }</code></pre>
@@ -237,11 +238,11 @@ mod tests {
 <div class="task">
 <p><span class="tag">任务 2</span> 更新 <code>src/lib.rs</code></p>
 <p>声明 <code>editor</code> 模块，用 <code>Editor</code> 驱动事件循环，渲染时按视口偏移取内容：</p>
-<pre><code>//! kilo-rs：一个用 Rust 重写的 kilo 文本编辑器。
+<pre><code>//! kilo-rs: a text editor rewritten from kilo in Rust.
 //!
-//! 逻辑放在库里（便于集成测试），`main.rs` 只是一层薄外壳。
-//! 终端生命周期在 [`tui`]，编辑器状态在 [`editor`]；
-//! 渲染与事件循环暂时留在本文件，之后会拆成 `ui` / `app`。
+//! Logic lives in the library (so integration tests can reach it); `main.rs` is a thin
+//! shell. Terminal lifecycle is in [`tui`], editor state in [`editor`]; rendering and the
+//! event loop stay here for now, to split into `ui` / `app` later.
 
 pub mod editor;
 pub mod tui;
@@ -268,13 +269,13 @@ use crate::{
 const NAME: &amp;str = env!("CARGO_PKG_NAME");
 const VERSION: &amp;str = env!("CARGO_PKG_VERSION");
 
-/// 运行编辑器：读取文件、接管终端、进入事件循环。
+/// Runs the editor: read the file, take over the terminal, enter the event loop.
 ///
 /// # Errors
 ///
-/// 读文件失败或终端操作失败时返回错误。
+/// Returns an error if reading the file or a terminal operation fails.
 pub fn run() -&gt; Result&lt;()&gt; {
-    // 读取命令行里的文件名；没有就开一个空 buffer
+    // Read the file name from argv; with no argument, start with an empty buffer.
     let lines = match env::args().nth(1) {
         Some(path) =&gt; fs::read_to_string(&amp;path)?
             .lines()
@@ -308,9 +309,10 @@ pub fn run() -&gt; Result&lt;()&gt; {
     Ok(())
 }
 
-/// 画一帧：按视口偏移渲染文件，并把终端光标放到编辑器光标处。
+/// Draws one frame: render the file at the viewport offset, then place the terminal
+/// cursor at the editor cursor.
 ///
-/// 会先调用 [`Editor::scroll`] 调整视口，因此需要 `&amp;mut Editor`。
+/// Calls [`Editor::scroll`] first, hence the `&amp;mut Editor`.
 fn draw(editor: &amp;mut Editor) -&gt; io::Result&lt;()&gt; {
     let (cols, rows) = terminal::size()?;
     let width = cols as usize;
@@ -341,14 +343,14 @@ fn draw(editor: &amp;mut Editor) -&gt; io::Result&lt;()&gt; {
         }
     }
 
-    // 视口保证光标落在屏幕内，这两个转换不会失败。
-    let cursor_col = u16::try_from(cx - coloff).expect("光标列应落在视口内");
-    let cursor_row = u16::try_from(cy - rowoff).expect("光标行应落在视口内");
+    // The viewport guarantees the cursor is on screen, so these conversions can't fail.
+    let cursor_col = u16::try_from(cx - coloff).expect("cursor column should be inside the viewport");
+    let cursor_row = u16::try_from(cy - rowoff).expect("cursor row should be inside the viewport");
     queue!(stdout, MoveTo(cursor_col, cursor_row), cursor::Show)?;
     stdout.flush()
 }
 
-/// 把一段文字截断到终端宽度（按字符，不按字节）。
+/// Truncates text to the terminal width (by chars, not bytes).
 fn truncate(text: &amp;str, width: u16) -&gt; String {
     text.chars().take(width as usize).collect()
 }
@@ -361,8 +363,8 @@ fn welcome_line(cols: u16) -&gt; String {
 
 <div class="task">
 <p><span class="tag">任务 3</span> 运行 + 测试 + clippy</p>
-<pre><code>cargo run -- kilo.c        # 用方向键上下移动，看画面跟随滚动
-cargo test                 # 3 个单元测试，不启动终端
+<pre><code>cargo run -- kilo.c        # arrow keys: the screen follows the cursor
+cargo test                 # 3 unit tests, no terminal needed
 cargo clippy --all-targets -- -D warnings</code></pre>
 </div>
 
@@ -466,7 +468,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 
 <div class="lesson-nav">
   <a class="prev" href="0004-first-refactor.html">← 第 4 课 · 第一次重构</a>
-  <a class="next" href="#">第 6 课 · 编辑（插入 / 回车 / 退格）与保存（待生成）</a>
+  <a class="next" href="0006-chars-vs-columns.html">第 6 课 · 字符 ≠ 列 →</a>
 </div>
 
 <p class="footer-note">kilo-rs 课程 · Lesson 0005。总目录见 <a href="../MISSION.md">MISSION.md</a>。</p>

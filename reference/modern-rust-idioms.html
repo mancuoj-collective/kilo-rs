@@ -43,14 +43,14 @@ use crate::document::Document;</code></pre>
 </tbody>
 </table>
 
-<pre><code>// ❌ 别扭
+<pre><code>// ❌ awkward
 if let Some(row) = self.row(idx) {
     process(row);
 } else {
     return;
 }
 
-// ✅ 现代
+// ✅ modern
 let Some(row) = self.row(idx) else {
     return;
 };
@@ -84,7 +84,7 @@ impl RawModeGuard {
 
 impl Drop for RawModeGuard {
     fn drop(&amp;mut self) {
-        // Drop 不能 panic，否则展开中的 panic 会二次 panic 导致 abort
+        // `Drop` must not panic, or the panic during unwinding double-panics and aborts
         let _ = terminal::disable_raw_mode();
     }
 }</code></pre>
@@ -143,7 +143,7 @@ impl Drop for RawModeGuard {
 <tr><td><code>#[allow(clippy::x)]</code></td><td><code>#[expect(clippy::x)]</code>（问题消失时会反过来提醒你）</td></tr>
 <tr><td><code>lazy_static!</code></td><td><code>std::sync::OnceLock</code></td></tr>
 <tr><td><code>once_cell::Lazy</code></td><td><code>std::sync::LazyLock</code>（1.80+）</td></tr>
-<tr><td><code>unwrap()</code> 用于「不可能失败」</td><td>优先 <code>?</code>；确实不可能失败时 <code>expect("原因")</code></td></tr>
+<tr><td><code>unwrap()</code> 用于「不可能失败」</td><td>优先 <code>?</code>；确实不可能失败时 <code>expect("reason")</code></td></tr>
 <tr><td><code>.clone()</code> 绕过借用检查</td><td>先想清楚所有权，尽量用 <code>&amp;T</code> / <code>&amp;str</code> / <code>&amp;[T]</code></td></tr>
 </tbody>
 </table>

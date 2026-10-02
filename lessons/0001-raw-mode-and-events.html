@@ -122,11 +122,12 @@ use crossterm::{
     terminal,
 };
 
-/// 把终端切到 raw mode；离开作用域时（正常返回、`?` 提前返回、panic 展开）
-/// 自动恢复原状。
+/// Puts the terminal into raw mode; restores it when this guard is dropped,
+/// whether on a normal return, an early `?` return, or a panic unwind.
 ///
-/// 故意是空结构体：raw mode 是进程级的终端状态，没有句柄可持有，
-/// 这个类型存在的唯一意义就是让 `Drop` 在正确的时间点触发。
+/// Intentionally a unit struct: raw mode is process-wide terminal state with no
+/// handle to hold. The only point of this type is to make `Drop` fire at the
+/// right moment.
 struct RawModeGuard;
 
 impl RawModeGuard {
@@ -138,8 +139,8 @@ impl RawModeGuard {
 
 impl Drop for RawModeGuard {
     fn drop(&amp;mut self) {
-        // Drop 里不能 panic，否则会让展开中的 panic 二次 panic，直接 abort。
-        // 所以这里显式忽略错误。
+        // `Drop` must not panic, or the panic during unwinding would double-panic
+        // and abort. So we explicitly ignore the error.
         let _ = terminal::disable_raw_mode();
     }
 }

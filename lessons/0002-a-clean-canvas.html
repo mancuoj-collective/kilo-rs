@@ -56,10 +56,10 @@
 去打印报告。这样报告就在正常屏幕上、用正常的换行打印了。</p>
 
 <pre><code>fn install_panic_hook() {
-    let hook = std::panic::take_hook();      // 拿到当前的 hook（color-eyre 的）
+    let hook = std::panic::take_hook();      // the current hook (color-eyre's)
     std::panic::set_hook(Box::new(move |info| {
-        restore();                            // 先救终端
-        hook(info);                           // 再让 color-eyre 打印
+        restore();                            // restore the terminal first
+        hook(info);                           // then let color-eyre print the report
     }));
 }</code></pre>
 
@@ -116,16 +116,16 @@ use crossterm::{
 
 const VERSION: &amp;str = env!("CARGO_PKG_VERSION");
 
-/// 持有「全屏编辑」状态：raw mode + 备用屏幕 + 隐藏的光标。
-/// 它离开作用域时，终端会被恢复原状。
+/// Holds full-screen editing state: raw mode, the alternate screen, a hidden cursor.
+/// Restores the terminal when dropped.
 struct Terminal;
 
 impl Terminal {
     fn enter() -&gt; io::Result&lt;Self&gt; {
         terminal::enable_raw_mode()?;
 
-        // 先构造守卫，再执行可能失败的命令：万一 execute! 失败，
-        // `guard` 会在提前返回时析构，raw mode 仍会被恢复。
+        // Build the guard *before* the fallible command: if `execute!` fails,
+        // `guard` is dropped on the early return and raw mode is still restored.
         let guard = Self;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
@@ -140,16 +140,17 @@ impl Drop for Terminal {
     }
 }
 
-/// 把终端恢复原状。`Drop` 和 panic hook 共用这一份逻辑。
+/// Restores the terminal. Shared by `Drop` and the panic hook.
 fn restore() {
     let mut stdout = io::stdout();
     let _ = execute!(stdout, cursor::Show, LeaveAlternateScreen);
     let _ = terminal::disable_raw_mode();
 }
 
-/// panic 时先恢复终端，再把信息交给原来的 hook 处理。
+/// Installs a panic hook that restores the terminal, then hands off to the
+/// previous hook.
 ///
-/// 必须在 `color_eyre::install()` **之后**调用，才能包住它设置的 hook。
+/// Must be called *after* `color_eyre::install()`, to wrap the hook it sets.
 fn install_panic_hook() {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -179,7 +180,8 @@ fn main() -&gt; Result&lt;()&gt; {
     Ok(())
 }
 
-/// 画一帧：整屏清空，空行画 `~`，在约 1/3 处显示欢迎语。
+/// Draws one frame: clear the screen, fill empty rows with `~`, and show the
+/// welcome line about a third of the way down.
 fn draw() -&gt; io::Result&lt;()&gt; {
     let (cols, rows) = terminal::size()?;
     let mut stdout = io::stdout();
@@ -193,7 +195,7 @@ fn draw() -&gt; io::Result&lt;()&gt; {
             queue!(stdout, Print('~'))?;
         }
 
-        // 最后一行之后不换行，否则会把整屏向上顶
+        // No newline after the last row, or the whole screen scrolls up.
         if y + 1 &lt; rows {
             queue!(stdout, Print("\r\n"))?;
         }

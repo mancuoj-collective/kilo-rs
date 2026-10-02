@@ -78,18 +78,18 @@
 <pre><code>kilo-rs/
 ├── Cargo.toml
 └── src/
-    ├── main.rs        # 薄：color-eyre + 参数 + App::run()
-    ├── lib.rs         # 声明模块，真正的逻辑入口
-    ├── tui.rs         # 终端生命周期：raw mode / 备用屏幕 / 光标 / panic hook
-    ├── editor.rs      # 编辑器状态：光标、视口滚动、缓冲区内容
-    ├── document.rs    # 缓冲区：行、增删改、读写文件（领域模型）
-    ├── row.rs         # 单行 + 渲染展开（tab、高亮片段）
-    ├── ui.rs          # 纯渲染：&App -> 终端（无状态）
-    └── syntax.rs      # 语法高亮规则
+    ├── main.rs        # thin: color-eyre + call into the library
+    ├── lib.rs         # module declarations; the real entry point
+    ├── tui.rs         # terminal lifecycle: raw mode / alt screen / cursor / panic hook
+    ├── editor.rs      # editor state: cursor, viewport scrolling, buffer contents
+    ├── document.rs    # buffer: lines, insert/delete, load/save (domain model)
+    ├── row.rs         # one line + render expansion (tabs, highlight spans)
+    ├── ui.rs          # pure rendering: &amp;Editor -&gt; terminal (stateless)
+    └── syntax.rs      # syntax highlighting rules
 </code></pre>
 
 <p>对照原版 C kilo：它的 <code>editorConfig E;</code> 是全局变量，所有函数都往它身上摸。
-我们的做法是把状态<strong>装进 <code>App</code></strong>，通过 <code>&amp;mut App</code> 传递——
+我们的做法是把状态<strong>装进 <code>Editor</code></strong>，通过 <code>&amp;mut Editor</code> 传递——
 所有权和可变性由类型系统管，而不是靠约定。</p>
 
 <h2>四、每个模块的接口草图</h2>
@@ -112,7 +112,7 @@
     <td><code>Editor::new(lines)</code>、<code>move_cursor(Move)</code>、<code>scroll(rows, cols)</code>、<code>cursor()</code> / <code>viewport()</code></td>
     <td>光标位置、视口滚动、缓冲区内容</td></tr>
 <tr><td><code>ui</code></td>
-    <td><code>draw(app: &amp;App, out, area)</code></td>
+    <td><code>draw(editor: &amp;Editor, out, area)</code></td>
     <td>逐行输出、status bar、message bar</td></tr>
 <tr><td><code>syntax</code></td>
     <td><code>Syntax::for_path(path)</code>、<code>highlight(row) -&gt; Vec&lt;Span&gt;</code></td>
@@ -131,7 +131,8 @@
 <ol>
 <li><strong>第 4 课：<code>tui.rs</code> + <code>lib.rs</code></strong>（已完成）。终端守卫独立，逻辑进库，从此能写测试。</li>
 <li><strong>第 5 课：<code>editor.rs</code></strong>（已完成）。光标与视口状态收进 <code>Editor</code>，并开始写单元测试。</li>
-<li><strong>编辑功能到来时：<code>document.rs</code> + <code>row.rs</code></strong>。
+<li><strong>第 6 课：<code>row.rs</code></strong>（已完成）。一行文本 + 「字符 ↔ 显示列」换算，为 tab 与宽字符打地基。</li>
+<li><strong>编辑功能到来时：<code>document.rs</code></strong>。
    插入、删除会让「缓冲区」长出一组共享不变式的方法——那时它就是深模块。</li>
 <li><strong>状态栏 / 消息栏：<code>ui.rs</code></strong>。渲染逻辑攒够了，抽成只读 <code>&amp;Editor</code> 的函数。</li>
 <li><strong>语法高亮：<code>syntax.rs</code></strong>。规则表 + 状态机，独立成模块。</li>

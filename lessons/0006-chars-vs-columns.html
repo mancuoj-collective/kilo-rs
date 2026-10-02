@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 6 课 · 字符 ≠ 列</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>第 6 课 · 字符 ≠ 列（tab 与宽字符）</h1>
+<p class="lesson-meta">kilo-rs 课程 · Lesson 0006 · 预计 40–50 分钟 · 修一个真 bug + 引入 Row</p>
+
+<p class="lede">你在第 5 课末尾发现：光标过中文时「两下才走一个字」。这是个真 bug，根因是
+<strong>「1 个字符」不等于「1 列」</strong>。这一课引入 <code>Row</code>，把
+<strong>逻辑字符位置 <code>cx</code></strong> 和 <strong>显示列 <code>rx</code></strong> 彻底分开，
+一次性修好<strong>光标、截断、横向滚动</strong>三处。</p>
+
+<div class="win">
+<p><span class="tag">本课成果</span></p>
+<ul>
+<li>光标过中文 / 全角字符时，一次跨越 2 列，位置正确；</li>
+<li>tab 展开成制表位（不再是让终端自己瞎展开）；</li>
+<li>超宽行按<strong>列</strong>截断，不再触发终端自动换行、错位；</li>
+<li>新增 <code>src/row.rs</code> 和一批单元测试（共 <strong>8 个</strong>），全部不依赖终端。</li>
+</ul>
+</div>
+
+<h2>为什么 char ≠ column</h2>
+
+<p>光标用「第几个字符」标记很自然，但屏幕是按「第几列」画的。这两者只在「所有字符都占 1 列」时才相等。
+真实情况里有三种反例：</p>
+
+<table>
+<thead><tr><th>字符</th><th>占几列</th><th>例子</th></tr></thead>
+<tbody>
+<tr><td>制表符 <code>\t</code></td><td>1 到 8 列（对齐到下一个制表位）</td><td>取决于它当前在第几列</td></tr>
+<tr><td>CJK / 全角字符</td><td><strong>2 列</strong></td><td>中文、日文、……</td></tr>
+<tr><td>组合字符</td><td><strong>0 列</strong></td><td>附在前一个字符上的声调符号等</td></tr>
+</tbody>
+</table>
+
+<div class="callout">
+<p><span class="tag">关键</span> tab 和宽字符是<strong>同一个问题</strong>：一个逻辑单位映射到 N 个显示列。
+原版 C kilo 的 <code>editorRowCxToRx</code> 本来就是为 <strong>tab</strong> 写的——我们只是把
+「宽字符也占 N 列」一并交给同一套机制。</p>
+</div>
+
+<h2>cx 与 rx：两套坐标</h2>
+
+<table>
+<thead><tr><th>记号</th><th>含义</th><th>用途</th></tr></thead>
+<tbody>
+<tr><td><code>cx</code></td><td>第几个<strong>字符</strong></td><td>光标移动、插入 / 删除</td></tr>
+<tr><td><code>rx</code></td><td>第几<strong>显示列</strong></td><td>画光标、横向滚动、截断</td></tr>
+</tbody>
+</table>
+
+<p>换算由 <code>Row</code> 负责：<code>cx_to_rx(cx)</code> 把字符序号转成起始列，
+<code>rx_to_cx(rx)</code> 反过来。<strong>光标位置、横向滚动都改用 <code>rx</code>；移动和编辑仍用 <code>cx</code>。</strong></p>
+
+<div class="callout">
+<p><span class="tag">「字符」有四种含义</span> 这是混淆的根源，分开看：</p>
+<table>
+<thead><tr><th>概念</th><th>术语</th><th><code>中</code> 是多少</th><th>Rust 里怎么看</th></tr></thead>
+<tbody>
+<tr><td>字节</td><td>byte</td><td>3</td><td><code>s.len()</code></td></tr>
+<tr><td>Unicode 标量值</td><td>Rust 的 <code>char</code> / 码点</td><td><strong>1</strong></td><td><code>s.chars().count()</code></td></tr>
+<tr><td>字素簇</td><td>grapheme cluster</td><td>1</td><td>需 <code>unicode-segmentation</code></td></tr>
+<tr><td>显示列</td><td>display column</td><td><strong>2</strong></td><td><code>unicode-width</code></td></tr>
+</tbody>
+</table>
+<p>本课程里 <code>cx</code> 数的是<strong>第二种</strong>（Rust 的 <code>char</code>，一个汉字 = 1），
+<code>rx</code> 数的是<strong>第四种</strong>（显示列，一个汉字 = 2）。所以「两下一个中文」
+不是在说字符，而是在拿「按键次数」和「显示列」比较。</p>
+<p><strong>已知局限</strong>：按码点计，<code>e</code> + 组合音会算 2 个、需要按两次退格才删掉视觉上的一个
+<code>é</code>；emoji 家族同理。要做「按字素簇编辑」，是以后的一课。</p>
+</div>
+
+<h2>动手</h2>
+
+<div class="task">
+<p><span class="tag">任务 1</span> 加依赖</p>
+<p>在 <code>Cargo.toml</code> 的 <code>[dependencies]</code> 里加一行（本地缓存里已有，可离线构建）：</p>
+<pre><code>unicode-width = "0.2"</code></pre>
+<p>它提供 <code>UnicodeWidthChar::width(ch) -&gt; Option&lt;usize&gt;</code>：宽字符返回 2，普通字符 1，控制 / 组合字符返回 0 或 <code>None</code>。</p>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 2</span> 新建 <code>src/row.rs</code></p>
+<pre><code>//! One line of text, and the conversion between char position and display column.
+//!
+//! The key fact: **a char does not always occupy one column**.
+//! - a tab `\t` occupies 1 to 8 columns (up to the next tab stop);
+//! - CJK / fullwidth chars occupy 2 columns;
+//! - combining marks occupy 0 columns.
+//!
+//! The cursor is described by char index (cx) but the screen is drawn by column (rx).
+//! This module converts between the two, and slices text by display column.
+
+use unicode_width::UnicodeWidthChar;
+
+/// Tab stop width.
+const TAB_STOP: usize = 8;
+
+/// A single line of text.
+pub struct Row {
+    chars: Vec&lt;char&gt;,
+}
+
+impl Row {
+    /// Builds a row from a string.
+    #[must_use]
+    pub fn new(text: &amp;str) -&gt; Self {
+        Self {
+            chars: text.chars().collect(),
+        }
+    }
+
+    /// Number of chars in this row (not columns).
+    #[must_use]
+    pub fn len(&amp;self) -&gt; usize {
+        self.chars.len()
+    }
+
+    /// Whether this row is empty.
+    #[must_use]
+    pub fn is_empty(&amp;self) -&gt; bool {
+        self.chars.is_empty()
+    }
+
+    /// Total display width of this row, in columns.
+    #[must_use]
+    pub fn width(&amp;self) -&gt; usize {
+        self.chars.iter().fold(0, |col, &amp;ch| advance(col, ch))
+    }
+
+    /// Display column of the `cx`-th char.
+    #[must_use]
+    pub fn cx_to_rx(&amp;self, cx: usize) -&gt; usize {
+        self.chars
+            .iter()
+            .take(cx)
+            .fold(0, |col, &amp;ch| advance(col, ch))
+    }
+
+    /// Index of the char at display column `rx`.
+    #[must_use]
+    pub fn rx_to_cx(&amp;self, rx: usize) -&gt; usize {
+        let mut col = 0;
+        for (index, &amp;ch) in self.chars.iter().enumerate() {
+            let next = advance(col, ch);
+            if next &gt; rx {
+                return index;
+            }
+            col = next;
+        }
+        self.chars.len()
+    }
+
+    /// Returns the text in display columns `[coloff, coloff + width)`.
+    #[must_use]
+    pub fn render_window(&amp;self, coloff: usize, width: usize) -&gt; String {
+        let mut out = String::new();
+        let end = coloff + width;
+        let mut col = 0;
+
+        for &amp;ch in &amp;self.chars {
+            let start = col;
+            col = advance(col, ch);
+
+            if col &lt;= coloff {
+                continue; // entirely left of the window
+            }
+            if start &gt;= end {
+                break; // window is full
+            }
+
+            if ch == '\t' || start &lt; coloff || col &gt; end {
+                // Expand tabs to spaces; pad a wide char straddling the edge with spaces.
+                let from = start.max(coloff);
+                let to = col.min(end);
+                out.push_str(&amp;" ".repeat(to - from));
+            } else {
+                out.push(ch);
+            }
+        }
+
+        out
+    }
+}
+
+/// Display width of `ch` starting at column `col` (tabs depend on `col`).
+fn advance(col: usize, ch: char) -&gt; usize {
+    if ch == '\t' {
+        col + (TAB_STOP - col % TAB_STOP)
+    } else {
+        col + ch.width().unwrap_or(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wide_chars_take_two_columns() {
+        let row = Row::new("中a");
+        assert_eq!(row.cx_to_rx(0), 0);
+        assert_eq!(row.cx_to_rx(1), 2); // '中' is 2 columns wide
+        assert_eq!(row.cx_to_rx(2), 3);
+        assert_eq!(row.width(), 3);
+    }
+
+    #[test]
+    fn tab_aligns_to_next_stop() {
+        let row = Row::new("\tx");
+        assert_eq!(row.cx_to_rx(1), 8); // a leading tab aligns to column 8
+        assert_eq!(row.cx_to_rx(2), 9);
+    }
+
+    #[test]
+    fn rx_to_cx_is_the_inverse() {
+        let row = Row::new("中a");
+        assert_eq!(row.rx_to_cx(1), 0); // column 1 is inside '中', still char 0
+        assert_eq!(row.rx_to_cx(2), 1);
+    }
+
+    #[test]
+    fn render_window_clips_by_columns() {
+        let row = Row::new("中文");
+        assert_eq!(row.render_window(0, 4), "中文");
+        assert_eq!(row.render_window(0, 3), "中 "); // a wide char that doesn't fit is padded
+    }
+}</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 3</span> 改写 <code>src/editor.rs</code></p>
+<p>把 <code>Vec&lt;String&gt;</code> 换成 <code>Vec&lt;Row&gt;</code>；<code>cursor()</code> 现在返回<strong>显示列</strong>；
+<code>scroll</code> 的横向也用 <code>rx</code>：</p>
+<pre><code>//! Editable editor state: cursor, viewport, and rendering by display column.
+
+use crate::row::Row;
+
+/// A cursor movement direction.
+#[derive(Clone, Copy)]
+pub enum Move {
+    Left,
+    Right,
+    Up,
+    Down,
+    Home,
+    End,
+}
+
+/// Editor state: buffer, cursor, and viewport.
+pub struct Editor {
+    rows: Vec&lt;Row&gt;,
+    /// Cursor position in **chars**: `cx` is the char index, `cy` the row.
+    cx: usize,
+    cy: usize,
+    /// Top-left of the viewport, in **display columns / rows**.
+    coloff: usize,
+    rowoff: usize,
+}
+
+impl Editor {
+    /// Creates a new editor from the given lines.
+    #[must_use]
+    pub fn new(lines: &amp;[String]) -&gt; Self {
+        Self {
+            rows: lines.iter().map(|line| Row::new(line)).collect(),
+            cx: 0,
+            cy: 0,
+            coloff: 0,
+            rowoff: 0,
+        }
+    }
+
+    /// Number of rows.
+    #[must_use]
+    pub fn len(&amp;self) -&gt; usize {
+        self.rows.len()
+    }
+
+    /// Whether there are no rows.
+    #[must_use]
+    pub fn is_empty(&amp;self) -&gt; bool {
+        self.rows.is_empty()
+    }
+
+    /// Cursor position `(display column, row)`; the column is a display column, not a char index.
+    #[must_use]
+    pub fn cursor(&amp;self) -&gt; (usize, usize) {
+        (self.current_rx(), self.cy)
+    }
+
+    /// Top-left of the viewport, as `(display column, row)`.
+    #[must_use]
+    pub fn viewport(&amp;self) -&gt; (usize, usize) {
+        (self.coloff, self.rowoff)
+    }
+
+    /// Renders row `index` at display columns `[coloff, coloff + width)`.
+    #[must_use]
+    pub fn render_line(&amp;self, index: usize, coloff: usize, width: usize) -&gt; Option&lt;String&gt; {
+        self.rows
+            .get(index)
+            .map(|row| row.render_window(coloff, width))
+    }
+
+    /// Moves the cursor in the given direction (in chars).
+    pub fn move_cursor(&amp;mut self, direction: Move) {
+        let numrows = self.rows.len();
+        match direction {
+            Move::Left =&gt; {
+                if self.cx &gt; 0 {
+                    self.cx -= 1;
+                } else if self.cy &gt; 0 {
+                    self.cy -= 1;
+                    self.cx = self.current_line_len();
+                }
+            }
+            Move::Right =&gt; {
+                if self.cy &lt; numrows {
+                    if self.cx &lt; self.current_line_len() {
+                        self.cx += 1;
+                    } else {
+                        self.cy += 1;
+                        self.cx = 0;
+                    }
+                }
+            }
+            Move::Up =&gt; {
+                if self.cy &gt; 0 {
+                    self.cy -= 1;
+                }
+            }
+            Move::Down =&gt; {
+                if self.cy &lt; numrows {
+                    self.cy += 1;
+                }
+            }
+            Move::Home =&gt; self.cx = 0,
+            Move::End =&gt; self.cx = self.current_line_len(),
+        }
+
+        // Moving to a shorter line: clamp the column to the line end.
+        self.cx = self.cx.min(self.current_line_len());
+    }
+
+    /// Adjusts the viewport so the cursor stays visible; horizontally by **display column** `rx`.
+    pub fn scroll(&amp;mut self, rows: usize, cols: usize) {
+        let rx = self.current_rx();
+
+        if self.cy &lt; self.rowoff {
+            self.rowoff = self.cy;
+        }
+        if self.cy &gt;= self.rowoff + rows {
+            self.rowoff = self.cy - rows + 1;
+        }
+        if rx &lt; self.coloff {
+            self.coloff = rx;
+        }
+        if rx &gt;= self.coloff + cols {
+            self.coloff = rx - cols + 1;
+        }
+    }
+
+    /// Number of chars in the cursor's row.
+    fn current_line_len(&amp;self) -&gt; usize {
+        self.rows.get(self.cy).map_or(0, Row::len)
+    }
+
+    /// Display column of the cursor.
+    fn current_rx(&amp;self) -&gt; usize {
+        self.rows
+            .get(self.cy)
+            .map_or(0, |row| row.cx_to_rx(self.cx))
+    }
+}</code></pre>
+<p>（文件末尾的 <code>#[cfg(test)] mod tests</code> 保留原来的三个测试，另外加一个验证宽字符光标的新测试：）</p>
+<pre><code>    #[test]
+    fn cursor_reports_display_columns_for_wide_chars() {
+        let mut e = Editor::new(&amp;[String::from("中文")]);
+        e.move_cursor(Move::Right); // move past the 1st char
+        assert_eq!(e.cursor(), (2, 0)); // display column is 2, not 1
+        e.move_cursor(Move::End);
+        assert_eq!(e.cursor(), (4, 0)); // line end is at display column 4
+    }</code></pre>
+<p>注意原来的 <code>scroll_keeps_cursor_visible</code> 测试要把构造改成切片形式：</p>
+<pre><code>    let lines: Vec&lt;String&gt; = (0..10).map(|i| format!("line {i}")).collect();
+    let mut e = Editor::new(&amp;lines);</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 4</span> 更新 <code>src/lib.rs</code> 的 <code>draw</code></p>
+<p>声明 <code>pub mod row;</code>，然后渲染改成「问 <code>Editor</code> 要一行按列取好的文本」：</p>
+<pre><code>pub mod editor;
+pub mod row;
+pub mod tui;
+
+// ... `use` and `run` are unchanged; only:
+// let mut editor = Editor::new(&amp;lines);
+
+/// Draws one frame: render the file at the viewport offset and place the terminal cursor.
+fn draw(editor: &amp;mut Editor) -&gt; io::Result&lt;()&gt; {
+    let (cols, rows) = terminal::size()?;
+    let width = cols as usize;
+    let height = rows as usize;
+
+    editor.scroll(height, width);
+
+    let (coloff, rowoff) = editor.viewport();
+    let (rx, cy) = editor.cursor();
+
+    let mut stdout = io::stdout();
+    queue!(stdout, cursor::Hide, Clear(ClearType::All), MoveTo(0, 0))?;
+
+    for y in 0..height {
+        let filerow = rowoff + y;
+        if let Some(text) = editor.render_line(filerow, coloff, width) {
+            queue!(stdout, Print(text))?;
+        } else if editor.is_empty() &amp;&amp; y == height / 3 {
+            queue!(stdout, Print(welcome_line(cols)))?;
+        } else {
+            queue!(stdout, Print('~'))?;
+        }
+
+        if y + 1 &lt; height {
+            queue!(stdout, Print("\r\n"))?;
+        }
+    }
+
+    // The viewport guarantees the cursor is on screen, so these conversions can't fail.
+    let cursor_col = u16::try_from(rx - coloff).expect("cursor column should be inside the viewport");
+    let cursor_row = u16::try_from(cy - rowoff).expect("cursor row should be inside the viewport");
+    queue!(stdout, MoveTo(cursor_col, cursor_row), cursor::Show)?;
+    stdout.flush()
+}</code></pre>
+<p>（<code>truncate</code> / <code>welcome_line</code> 保持不动；它们只服务 ASCII 欢迎语。）</p>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 5</span> 运行 + 测试</p>
+<pre><code>printf '中文测试\nabc\n标签行\n' &gt; zh.txt
+cargo run -- zh.txt        # cursor crosses a CJK char in one step (2 columns)
+cargo run -- kilo.c        # a file with tabs: check tab expansion aligns
+cargo test                 # 8 unit tests, no terminal needed
+cargo clippy --all-targets -- -D warnings</code></pre>
+</div>
+
+<h2>逐段拆解</h2>
+
+<ul>
+<li><code>advance(col, ch)</code> 是<strong>自由函数</strong>而不是方法：它不需要 <code>self</code>。
+  写成方法的话 <code>clippy::unused_self</code>（pedantic）会提示你——这是它在提醒「这不该是方法」。</li>
+<li><code>advance</code> 的参数是 <code>(列, 字符)</code>，不是「字符的固定宽度」——因为 <strong>tab 的宽度取决于当前列</strong>：
+  <code>col + (TAB_STOP - col % TAB_STOP)</code> 把它对齐到下一个 8 的倍数。所以它算的是「列 → 列」。
+  <code>width()</code> 与 <code>cx_to_rx()</code> 都是拿它做 <code>fold</code> 的步进函数。</li>
+<li><code>ch.width().unwrap_or(0)</code>：<code>unicode-width</code> 对控制字符返回 <code>None</code>，这里当 0 列。
+  这是简化（原版 kilo 会把控制字符显示成 <code>^@</code> 之类的 1 列符号），以后再补。</li>
+<li><code>cx_to_rx</code> 用 <code>.take(cx).fold(0, …)</code>：累加前 <code>cx</code> 个字符的宽度。
+  制表符的宽度<strong>依赖当前列</strong>（对齐到下一个 8 的倍数），所以必须边累加边算，不能预先算死。</li>
+<li><strong><code>fold</code> 就是带累加器的 <code>for</code></strong>：<code>iter.fold(初始值, |累加器, 元素| 新累加器)</code>。
+  <code>self.chars.iter().fold(0, |col, &amp;ch| advance(col, ch))</code> 读作「从第 0 列开始，
+  把每个字符依次交给 <code>advance</code> 推进列」。<code>iter()</code> 产出的是 <code>&amp;char</code>，
+  模式 <code>&amp;ch</code> 把它拆成 <code>ch: char</code>（<code>char</code> 是 <code>Copy</code>，拆引用即复制），
+  等价于 <code>|col, ch| advance(col, *ch)</code>。等价的手写循环：<code>let mut col = 0; for &amp;ch in &amp;self.chars { col = advance(col, ch); }</code>。</li>
+<li><code>render_window</code> 一次做完三件事：<strong>tab 展开</strong>、<strong>按列截断</strong>、
+  <strong>宽字符跨界用空格占位</strong>（半个字不画，免得字形被切一半）。它接收的是<strong>显示列</strong>窗口。</li>
+<li><code>Editor::cursor()</code> 现在返回 <code>(显示列, 行)</code>——<strong>不是</strong>字符序号。
+  这是个语义变化，所以名字和文档都要说清。移动 / 编辑仍用字符 <code>cx</code>。</li>
+<li><code>Editor::new(&amp;[String])</code> 收<strong>切片</strong>而不是 <code>Vec&lt;String&gt;</code>：
+  它只读不消费，收窄参数类型（Apollo §1.1）。这也是 <code>clippy::needless_pass_by_value</code> 逼出来的正确签名。</li>
+<li><code>unicode-width</code> 是<strong>近似</strong>：不同终端对少数字符的宽度仍有分歧。
+  更远一步（emoji 的 grapheme cluster、ZWJ 序列）要 <code>unicode-segmentation</code>，现在不做。</li>
+</ul>
+
+<div class="callout">
+<p><span class="tag">tab 为什么不是「+8」</span> tab 的语义是「跳到<strong>下一个制表位</strong>」，前进多少取决于当前列。
+制表位固定在 0、8、16…：<code>col=0</code> 时前进 8，<code>col=3</code> 时前进 5，<code>col=8</code> 时前进 8，<code>col=10</code> 时前进 6。
+公式 <code>TAB_STOP - col % TAB_STOP</code> 就是「离下一个制表位还差多少列」。</p>
+<p>为什么必须这样——为了<strong>对齐</strong>：</p>
+<pre><code>a\tX          a . . . . . . X        # X 在第 8 列
+abcdefg\tY    a b c d e f g Y        # Y 在第 8 列   ✅ 对齐
+
+（若只 +8：X 在第 9 列、Y 在第 15 列，错位）</code></pre>
+<p>这也是真实终端敲 Tab 的行为，所以 <code>advance</code> 算出的列宽和终端显示一致。</p>
+</div>
+
+<div class="callout">
+<p><span class="tag">为什么 Row 先于编辑</span> 编辑（插入 / 删除）要作用在「行」上，渲染要展开 tab，
+高亮也要按行来。<code>Row</code> 是它们共同的前置。所以这次是「顺手把地基打对」，不是绕路。</p>
+</div>
+
+<h2>小测</h2>
+
+<div class="quiz">
+<p class="q">1. 光标位置和横向滚动该用下面哪个量？</p>
+<ul>
+<li>显示列 <code>rx</code></li>
+<li>字符序号 <code>cx</code></li>
+<li>行号 <code>cy</code></li>
+<li>字节偏移</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。屏幕是按列画的，所以光标落在第几列、视口从第几列开始，都要用 <code>rx</code>。
+而「移动 / 插入 / 删除」这种「第几个字符」的操作仍用 <code>cx</code>。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">2. 一个 tab 占几列？</p>
+<ul>
+<li>取决于它当前在第几列</li>
+<li>永远是 1 列</li>
+<li>永远是 8 列</li>
+<li>永远是 2 列</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。tab 对齐到下一个制表位，所以宽度 = <code>TAB_STOP - col % TAB_STOP</code>：
+行首的 tab 是 8 列，第 3 列处的 tab 是 5 列。正因为它<strong>依赖当前列</strong>，宽度必须边累加边算。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">3. 为什么修这个 bug 要引入 <code>Row</code>，而不是只改光标那两行？</p>
+<ul>
+<li>光标、截断、滚动都依赖同一套换算</li>
+<li>因为 <code>Vec&lt;String&gt;</code> 无法保存中文</li>
+<li>因为 <code>unicode-width</code> 只能作用于自定义类型</li>
+<li>因为 Rust 不允许在 <code>Editor</code> 里算宽度</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。把「字符 ↔ 列」的换算集中到 <code>Row</code>，光标、横向滚动、截断就都走同一份逻辑，
+只改一处、全部受益——这正是「深模块」省力的地方。</p>
+</details>
+</div>
+
+<h2>主要资料</h2>
+<ul class="ref-list">
+<li><a href="https://docs.rs/unicode-width/latest/unicode_width/">unicode-width 文档</a>
+  —— <code>UnicodeWidthChar</code> / <code>UnicodeWidthStr</code>。</li>
+<li>对应章节：<a href="https://viewsourcecode.org/snaptoken/kilo/04.aTextViewer.html">snaptoken 第 4 章</a>
+  （<code>editorRowCxToRx</code> 的由来，为 tab 而生）。</li>
+<li><a href="https://www.unicode.org/reports/tr11/">Unicode 标准附件 #11（East Asian Width）</a>
+  —— 「宽字符占 2 列」的官方依据。</li>
+<li>本课程：<a href="../reference/architecture.html">架构与文件结构</a> ·
+  <a href="../reference/modern-rust-idioms.html">现代 Rust 惯用法</a>。</li>
+</ul>
+
+<h2>我是你的老师，随时问</h2>
+
+<div class="callout">
+<p><code>fold</code> 和 <code>for</code> 怎么选、<code>render_window</code> 里那串边界条件怎么推、
+<code>unicode-width</code> 为什么是近似……任何卡住的地方直接问。下一课真正开始
+<strong>编辑</strong>：插入字符、回车换行、退格删除，然后<strong>保存</strong>——
+<code>Row</code> 会长出修改方法，也是借用检查器开始上强度的地方。</p>
+</div>
+
+<div class="lesson-nav">
+  <a class="prev" href="0005-cursor-and-scrolling.html">← 第 5 课 · 光标与滚动</a>
+  <a class="next" href="#">第 7 课 · 编辑与保存（待生成）</a>
+</div>
+
+<p class="footer-note">kilo-rs 课程 · Lesson 0006。总目录见 <a href="../MISSION.md">MISSION.md</a>。</p>
+
+</body>
+</html>

@@ -31,7 +31,7 @@
 <p><code>std::env::args()</code> 返回一个迭代器，第 0 项是程序名，第 1 项就是你传的文件名。
 用 <code>.nth(1)</code> 拿到它（<code>Option&lt;String&gt;</code>）：</p>
 
-<pre><code>let path = std::env::args().nth(1);   // Some("README.md") 或 None</code></pre>
+<pre><code>let path = std::env::args().nth(1);   // Some("README.md") or None</code></pre>
 
 <div class="callout">
 <p><span class="tag">注意</span> 用 <code>cargo run</code> 传参必须加 <code>--</code>：
@@ -83,14 +83,14 @@ use crossterm::{
 const NAME: &amp;str = env!("CARGO_PKG_NAME");
 const VERSION: &amp;str = env!("CARGO_PKG_VERSION");
 
-/// 持有「全屏编辑」状态：raw mode + 备用屏幕 + 隐藏的光标。
+/// Holds full-screen editing state: raw mode, the alternate screen, a hidden cursor.
 struct Terminal;
 
 impl Terminal {
     fn enter() -&gt; io::Result&lt;Self&gt; {
         terminal::enable_raw_mode()?;
 
-        // 先构造守卫，再执行可能失败的命令。
+        // Build the guard before the fallible command.
         let guard = Self;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
@@ -123,7 +123,7 @@ fn main() -&gt; Result&lt;()&gt; {
     color_eyre::install()?;
     install_panic_hook();
 
-    // 读取命令行里的文件名；没有就开一个空 buffer
+    // Read the file name from argv; with no argument, start with an empty buffer.
     let lines = match env::args().nth(1) {
         Some(path) =&gt; fs::read_to_string(&amp;path)?
             .lines()
@@ -149,7 +149,8 @@ fn main() -&gt; Result&lt;()&gt; {
     Ok(())
 }
 
-/// 画一帧：文件的前若干行，其余用 `~` 补满；空文件显示欢迎语。
+/// Draws one frame: the first lines of the file, padded with `~`; the welcome
+/// line for an empty file.
 fn draw(lines: &amp;[String]) -&gt; io::Result&lt;()&gt; {
     let (cols, rows) = terminal::size()?;
     let mut stdout = io::stdout();
@@ -174,7 +175,7 @@ fn draw(lines: &amp;[String]) -&gt; io::Result&lt;()&gt; {
     stdout.flush()
 }
 
-/// 把一段文字截断到终端宽度（按字符，不按字节）。
+/// Truncates text to the terminal width (by chars, not bytes).
 fn truncate(text: &amp;str, width: u16) -&gt; String {
     text.chars().take(width as usize).collect()
 }
