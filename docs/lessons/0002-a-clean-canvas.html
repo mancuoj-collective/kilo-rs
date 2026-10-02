@@ -40,20 +40,20 @@
 终端里的 <code>vim</code>、<code>less</code> 都用备用屏幕工作。进入时切过去，退出时切回来——
 <strong>正常屏幕上的内容原封不动地恢复</strong>。这正是我们要的效果。</p>
 
-<p>crossterm 对应两个命令：<code>EnterAlternateScreen</code> / <code>LeaveAlternateScreen</code>。
+<p>crossterm 提供了两个对应的命令：<code>EnterAlternateScreen</code> / <code>LeaveAlternateScreen</code>。
 顺便用 <code>cursor::Hide</code> / <code>cursor::Show</code> 把光标藏起来（否则它会在画面上乱闪）。</p>
 
 <div class="callout">
-<p><span class="tag">设计</span> 「进备用屏幕」「开 raw mode」「藏光标」这三件事必须<strong>成对</strong>，
+<p><span class="tag">设计</span> 「进备用屏幕」「开 raw mode」「藏光标」这三件事必须<strong>成组出现、成组撤销</strong>，
 所以它们理应由第 1 课那个守卫的升级版来管——我们把它从 <code>RawModeGuard</code> 改名成
 <code>Terminal</code>，它现在持有的是「全屏编辑状态」。</p>
 </div>
 
 <h2>洞 2：panic hook</h2>
 
-<p>Rust 允许你安装一个 <strong>panic hook</strong>：panic 发生、但在栈开始展开之前，这个函数会被调用。
+<p>Rust 允许你安装一个 <strong>panic hook</strong>：它在 panic 发生之后、栈开始展开之前被调用。
 我们在这里<strong>先把终端恢复原状</strong>，再把信息交回给原来的 hook（<code>color-eyre</code> 设置的那个）
-去打印报告。这样报告就在正常屏幕上、用正常的换行打印了。</p>
+去打印报告。这样报告就会打在正常屏幕上、用正常的换行输出。</p>
 
 <pre><code>fn install_panic_hook() {
     let hook = std::panic::take_hook();      // the current hook (color-eyre's)
@@ -102,7 +102,7 @@
 
 <div class="task">
 <p><span class="tag">任务</span> 把 <code>src/main.rs</code> 改成下面的样子</p>
-<p>先看一遍，理解每块在干什么，再亲手敲进去：</p>
+<p>先通读一遍，理解每一块在做什么，再亲手敲进去：</p>
 <pre><code>use std::io::{self, Write};
 
 use color_eyre::Result;
@@ -214,9 +214,9 @@ fn welcome_line(cols: u16) -&gt; String {
 <h2>逐段拆解（只看这一课的新东西）</h2>
 
 <ul>
-<li><code>const VERSION: &amp;str = env!("CARGO_PKG_VERSION");</code>：<code>env!</code> 是
-  <strong>编译期</strong>读取，把 <code>Cargo.toml</code> 里的 <code>version</code> 直接烧进二进制。
-  不用像 C 版那样手写 <code>"0.0.1"</code>，也不会忘同步。</li>
+<li><code>const VERSION: &amp;str = env!("CARGO_PKG_VERSION");</code>：<code>env!</code> 在
+  <strong>编译期</strong>读取，把 <code>Cargo.toml</code> 里的 <code>version</code> 直接编进二进制。
+  不用像 C 版那样手写 <code>"0.0.1"</code>，也不会忘记同步。</li>
 <li><strong>为什么 <code>let guard = Self;</code> 必须出现在 <code>execute!(…)?</code> 之前？</strong>
   因为 <code>execute!</code> 可能失败，一旦失败就提前返回。如果那时还没有守卫，
   就没人负责关掉已经打开的 raw mode——终端会坏。<strong>先造守卫，再做可能失败的事</strong>，
@@ -250,7 +250,7 @@ fn welcome_line(cols: u16) -&gt; String {
 <li>整屏被接管：空行是 <code>~</code>，约 1/3 处有欢迎语。</li>
 <li><strong>拖动窗口边缘改变大小</strong>：画面会自动重画、铺满新尺寸。</li>
 <li>按 <kbd>Ctrl</kbd>+<kbd>Q</kbd>：退出后你敲 <code>cargo run</code> 之前的内容应该原样回来
-  （因为备用屏幕被切走了）。</li>
+  （因为程序切回了正常屏幕）。</li>
 </ol>
 <p>再跑 <code>cargo clippy --all-targets -- -D warnings</code>，确认没有告警。</p>
 </div>
@@ -337,7 +337,7 @@ fn welcome_line(cols: u16) -&gt; String {
 <h2>我是你的老师，随时问</h2>
 
 <div class="callout">
-<p>为什么 <code>install_panic_hook</code> 里的闭包要 <code>move</code>、<code>Box::new</code> 又是干嘛的、
+<p>为什么 <code>install_panic_hook</code> 里的闭包要 <code>move</code>、<code>Box::new</code> 又起什么作用、
 <code>chars().take()</code> 和字节切片到底差在哪……任何卡住的地方直接问。下一个洞就是真正的编辑器了：
 <strong>打开文件、把每一行存起来、显示出来</strong>——你的第一段「数据结构」要登场了。</p>
 </div>
@@ -347,7 +347,7 @@ fn welcome_line(cols: u16) -&gt; String {
   <a class="next" href="0003-open-a-file.html">第 3 课 · 打开一个文件 →</a>
 </div>
 
-<p class="footer-note">kilo-rs 课程 · Lesson 0002。总目录见 <a href="../MISSION.md">MISSION.md</a>。</p>
+<p class="footer-note">kilo-rs 课程 · Lesson 0002。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 </body>
 </html>

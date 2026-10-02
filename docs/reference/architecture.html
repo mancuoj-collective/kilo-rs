@@ -17,10 +17,10 @@
 <h2>一、什么时候分文件：按「接缝」，不按行数</h2>
 
 <p>「文件太长了」<strong>不是</strong>拆分的理由。拆分的依据是能不能画出一条干净的<strong>接缝（seam）</strong>——
-接口放在哪里，能让调用方少学一点、维护者少找一点。</p>
+接口画在哪里，才能让调用方少学一点、维护者少找一点。</p>
 
 <div class="callout">
-<p><span class="tag">词汇</span> <strong>深模块</strong>＝小接口 + 大量实现。一小撮方法背后藏着一堆逻辑，
+<p><span class="tag">词汇</span> <strong>深模块</strong>＝小接口 + 大量实现。少数几个方法背后藏着一堆逻辑，
 调用方（和测试）只需要学那点接口。反过来，接口和实现一样复杂，就是<strong>浅模块</strong>，是负担。
 <br>拆分的价值来自<strong>深</strong>：接口小 → 调用方省力；实现集中 → 维护和测试都在一处。</p>
 </div>
@@ -52,7 +52,7 @@
 
 <h3>② <code>lib.rs</code> + <code>main.rs</code>：把逻辑放进库</h3>
 <p>把逻辑放在 <code>src/lib.rs</code> 及其模块里，<code>main.rs</code> 只是一个几行的二进制外壳。
-这样 <code>tests/</code> 里的集成测试可以直接 <code>use kilo::…</code> 你的逻辑——
+这样 <code>tests/</code> 里的集成测试可以直接 <code>use kilo::…</code> 调用你的逻辑——
 <strong>这是「二进制也能被测试」的关键一招</strong>，也是初学者最常忽略的结构优点。</p>
 
 <div class="callout">
@@ -62,14 +62,14 @@
 所以很多小 CLI 只写 <code>main.rs</code> + 模块，同样是现代做法——别 cargo-cult。</p>
 <p><strong>决策规则</strong>：需要黑盒测试 / 基准 / 复用为库 → 用 <code>lib.rs</code>；
 只需要单元测试 → <code>main.rs</code> + <code>mod</code> 就够。</p>
-<p>本项目选 <code>lib.rs</code>，是因为「编辑器核心」值得被<strong>无终端地跑集成测试</strong>
+<p>本项目选 <code>lib.rs</code>，是因为「编辑器核心」值得<strong>在无终端的环境下跑集成测试</strong>
 （全屏 TUI 没法用 <code>assert_cmd</code> 那样黑盒跑）。代价是 <code>main</code> 只能看到 <code>pub</code> 项，
 所以我们只暴露一个 <code>pub fn run()</code> 把接口收窄，而不是把内部函数都标 <code>pub</code>。</p>
 </div>
 
 <h3>③ 按领域概念分模块，可见性收紧</h3>
 <p>模块对应「概念」，不对应「层」。跨模块可见性默认用 <code>pub(crate)</code>，
-只有库真正对外暴露的 API 才用 <code>pub</code>——<strong>接口的边界靠可见性强制出来</strong>。</p>
+只有库真正对外暴露的 API 才用 <code>pub</code>——<strong>接口的边界由可见性强制划定</strong>。</p>
 
 <p>文件命名：Rust 2018 之后用 <code>foo.rs</code> + <code>foo/</code> 目录，不要再写 <code>mod.rs</code>。</p>
 
@@ -88,7 +88,7 @@
     └── syntax.rs      # syntax highlighting rules
 </code></pre>
 
-<p>对照原版 C kilo：它的 <code>editorConfig E;</code> 是全局变量，所有函数都往它身上摸。
+<p>对照原版 C kilo：它的 <code>editorConfig E;</code> 是全局变量，所有函数都直接读写它。
 我们的做法是把状态<strong>装进 <code>Editor</code></strong>，通过 <code>&amp;mut Editor</code> 传递——
 所有权和可变性由类型系统管，而不是靠约定。</p>
 
@@ -123,7 +123,7 @@
 <div class="callout">
 <p><span class="tag">注意 <code>editor</code> 与 <code>ui</code> 的分工</span> <code>editor</code> 是<strong>状态 + 行为</strong>，
 <code>ui</code> 是<strong>纯函数式的渲染</strong>。让渲染只读 <code>&amp;Editor</code>、不改变状态，
-你就能为它写「给定状态 → 期望输出」的测试，也能以后换渲染后端。这是「返回结果，而不是产生副作用」。</p>
+你就能为它写「给定状态 → 期望输出」的测试，以后也能替换渲染后端。这是「返回结果，而不是产生副作用」。</p>
 </div>
 
 <h2>五、拆分路线图（和课程对应）</h2>
@@ -141,7 +141,7 @@
 <div class="warn">
 <p><span class="tag">原则</span> 每一刀都是<strong>「行为不变的搬家」</strong>：先让现有功能继续跑通（可编译、可运行），
 再搬家，搬完再跑一次。绝不「一边重构一边加功能」。这就是为什么拆分要<strong>等接缝清晰</strong>——
-接缝不清楚时搬家，就是在造错误抽象。</p>
+接缝不清楚时搬家，就是在制造错误的抽象。</p>
 </div>
 
 <h2>六、来源</h2>
@@ -151,7 +151,7 @@
 <li><a href="https://doc.rust-lang.org/book/ch07-00-managing-growing-projects-with-packages-crates-and-modules.html">The Book · 第 7 章</a>
   —— 包、crate、模块、路径、可见性。</li>
 <li><a href="https://rust-cli.github.io/book/tutorial/testing.html">Command Line Applications in Rust · Testing</a>
-  —— 官方 CLI 书，含《Splitting your code into library and binary targets》一节，<code>lib.rs</code> 建议的一手来源。</li>
+  —— 官方 CLI 书，含《Splitting your code into library and binary targets》一节，是 <code>lib.rs</code> 建议的一手来源。</li>
 <li><code>cargo</code> 自身：<code>src/bin/cargo/main.rs</code> 是薄 bin，<code>use cargo::…</code>，逻辑全在库里。</li>
 <li>A Philosophy of Software Design（Ousterhout）—— 深模块与复杂度。本课程取「深度＝杠杆」的解释。</li>
 <li><a href="https://martinfowler.com/bliki/FlagArgument.html">Rule of Three / 错误抽象</a> —— 见 Apollo 手册 §1.8。</li>

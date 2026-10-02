@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>用 Rust 重写 kilo · 课程</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<h1>用 Rust 重写 kilo</h1>
+<p class="lesson-meta">一门项目驱动的 Rust 课程 · 现代写法 · 边写边学</p>
+
+<p class="lede">从零开始，把 <a href="https://github.com/antirez/kilo">kilo</a>——一个一千行出头的文本编辑器——
+用<strong>现代 Rust</strong> 一步步重写出来。每一课都是一个小胜利：能编译、能运行、能亲眼看到变化。</p>
+
+<div class="win">
+<p><span class="tag">这门课的目标</span></p>
+<ul>
+<li>把 rustlings 学到的语法，真正用在有状态、有交互、会长期演进的项目上；</li>
+<li>练出「设计数据结构 → 处理所有权与借用 → 拆模块」的真实工程能力；</li>
+<li>最终真正拥有一个能运行的、由自己一行行写出来的编辑器。</li>
+</ul>
+</div>
+
+<h2>课程目录</h2>
+
+<ol class="ref-list">
+<li><a href="lessons/0001-raw-mode-and-events.html">第 1 课 · 接管终端</a>
+  —— raw mode、事件循环，用 <code>Drop</code> 守卫保证终端一定被恢复。</li>
+<li><a href="lessons/0002-a-clean-canvas.html">第 2 课 · 干净的画布</a>
+  —— 备用屏幕、panic hook，开始一帧一帧地画屏幕。</li>
+<li><a href="lessons/0003-open-a-file.html">第 3 课 · 打开一个文件</a>
+  —— 命令行参数、把文件读进 <code>Vec&lt;String&gt;</code>、渲染到画布。</li>
+<li><a href="lessons/0004-first-refactor.html">第 4 课 · 第一次重构</a>
+  —— 拆出 <code>tui.rs</code> 与 <code>lib.rs</code>，第一次做「行为不变的搬家」。</li>
+<li><a href="lessons/0005-cursor-and-scrolling.html">第 5 课 · 光标与滚动</a>
+  —— 光标移动、视口滚动，写出第一批<strong>不依赖终端的单元测试</strong>。</li>
+<li><a href="lessons/0006-chars-vs-columns.html">第 6 课 · 字符 ≠ 列</a>
+  —— tab 与宽字符、<code>cx</code>/<code>rx</code> 换算，引入 <code>Row</code>。</li>
+</ol>
+
+<div class="callout">
+<p><span class="tag">进行中</span> 第 7 课（编辑与保存：插入、换行、退格、写回磁盘）正在路上。</p>
+</div>
+
+<h2>参考文档</h2>
+
+<ul class="ref-list">
+<li><a href="reference/modern-rust-idioms.html">现代 Rust 惯用法</a>
+  —— 本课程的风格约定：import 顺序、<code>let-else</code>、RAII、错误处理、字符串转换……</li>
+<li><a href="reference/architecture.html">架构与文件结构</a>
+  —— 什么时候该分文件、什么是深模块、<code>kilo-rs</code> 的目标结构。</li>
+<li><a href="reference/crossterm-terminal-basics.html">终端基础与 crossterm API</a>
+  —— raw mode、事件循环骨架、按键模型、常见坑。</li>
+</ul>
+
+<h2>课程的约定</h2>
+
+<ul>
+<li><strong>代码用英文，讲解用中文</strong>：注释（<code>//</code>、<code>///</code>、<code>//!</code>）和运行时字符串
+  （<code>expect</code>、panic 信息）一律英文；课程正文保持中文。理由：中文里「字符」等词有歧义，
+  而英文术语精确（<code>code point</code> / <code>column</code> / <code>byte</code>），也与 Rust 生态一致。</li>
+<li><strong>每课都能跑</strong>：任何一步都应能 <code>cargo run</code> 并观察到变化。</li>
+<li><strong>质量门</strong>：以 <code>cargo clippy --all-targets -- -D warnings</code> 零告警为底线，
+  <code>unsafe</code> 一律禁止。</li>
+<li><strong>先体验问题，再引入解法</strong>；重构只做「行为不变的搬家」，绝不一边重构一边加功能。</li>
+</ul>
+
+<h2>学习资源</h2>
+
+<ul class="ref-list">
+<li><a href="https://github.com/apollographql/rust-best-practices">Apollo · Rust Best Practices Handbook</a>
+  —— 本课程「现代写法」的主要依据。</li>
+<li><a href="https://www.flenker.blog/hecto/">Hecto: Build Your Own Text Editor in Rust</a>
+  —— 最接近本路线的 Rust 版 kilo 教程，对照阅读。</li>
+<li><a href="https://viewsourcecode.org/snaptoken/kilo/index.html">Build Your Own Text Editor（C 版）</a>
+  —— 原版教程，讲清「为什么这么做」。</li>
+<li><a href="https://docs.rs/crossterm/0.29.0/crossterm/">crossterm 文档</a>
+  —— 终端控制 API 的权威来源。</li>
+<li><a href="https://doc.rust-lang.org/book/">The Rust Programming Language</a> ·
+  <a href="https://course.rs/">Rust 语言圣经</a> —— 所有权、借用、模块与错误处理的查阅入口。</li>
+<li>社区：<a href="https://users.rust-lang.org/">Rust Users Forum</a> ·
+  <a href="https://reddit.com/r/rust">r/rust</a> · <a href="https://rustcc.cn/">Rust 中文社区</a>。</li>
+</ul>
+
+<p class="footer-note">kilo-rs 课程 · 用 Rust 重写 kilo。</p>
+
+</body>
+</html>

@@ -37,7 +37,7 @@ use crate::document::Document;</code></pre>
 <table>
 <thead><tr><th>场景</th><th>选择</th></tr></thead>
 <tbody>
-<tr><td>失败分支要做额外计算，且需要那个值</td><td><code>if let … else { … }</code></td></tr>
+<tr><td>失败分支需要做额外计算，且要用到那个值</td><td><code>if let … else { … }</code></td></tr>
 <tr><td>失败分支只是 <code>continue</code>/<code>break</code>/<code>return</code></td><td><code>let … else { … }</code></td></tr>
 <tr><td>需要分别处理 <code>Ok</code> 和 <code>Err</code> 的不同形态</td><td><code>match</code></td></tr>
 </tbody>
@@ -63,7 +63,7 @@ process(row);</code></pre>
 <li><code>let PATTERN = … else { … }</code> 处理<strong>枚举变体层</strong>——模式不匹配时就跑 else 块。</li>
 </ul>
 <p>例：<code>let Event::Key(key) = event::read()? else { continue };</code>
-= 先用 <code>?</code> 处理 I/O 错误，再用 <code>else</code> 跳过非键盘事件。else 块必须发散
+意思是：先用 <code>?</code> 处理 I/O 错误，再用 <code>else</code> 跳过非键盘事件。else 块必须发散
 （<code>continue</code>/<code>break</code>/<code>return</code>/<code>panic!</code>）。</p>
 </div>
 
@@ -132,7 +132,7 @@ impl Drop for RawModeGuard {
 </tbody>
 </table>
 
-<p>口诀：<strong>错误类型尽量窄地往下沉，只在边界擦除。</strong></p>
+<p>口诀：<strong>错误类型尽量收窄并向下沉，只在边界处擦除。</strong></p>
 
 <h2>5. 更小的惯用法</h2>
 

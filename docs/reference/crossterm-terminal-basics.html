@@ -21,7 +21,7 @@
 <tbody>
 <tr><td>输入</td><td>按行交给程序</td><td>每次按键立即交给程序</td></tr>
 <tr><td>回显</td><td>终端自动显示</td><td>程序自己决定显示什么</td></tr>
-<tr><td>Ctrl-C / Ctrl-Q</td><td>被终端解释成信号</td><td>作为普通按键交给程序</td></tr>
+<tr><td>Ctrl-C / Ctrl-Q</td><td>被终端解释为信号</td><td>作为普通按键交给程序</td></tr>
 <tr><td>输出 <code>\n</code></td><td>换行并回到行首</td><td>只换行，需要写 <code>\r\n</code></td></tr>
 </tbody>
 </table>
@@ -57,7 +57,7 @@ let _guard = RawModeGuard::enter()?;</code></pre>
 
 <div class="warn">
 <p><span class="tag">记住</span> 任何时候都不写裸的 <code>enable_raw_mode()</code>。
-救命手段：终端没恢复时盲打 <code>reset</code> 或 <code>stty sane</code> 后回车。</p>
+应急手段：终端没有恢复时，盲打 <code>reset</code> 或 <code>stty sane</code> 再回车。</p>
 </div>
 
 <h2>三、事件循环骨架（现代写法）</h2>
@@ -79,7 +79,7 @@ loop {
     }
 }</code></pre>
 
-<p class="ref-list"><code>event::read()</code> 阻塞到有事件为止；非阻塞轮询用
+<p class="ref-list"><code>event::read()</code> 阻塞直到有事件发生；非阻塞轮询用
 <code>event::poll(Duration)</code>。二者不能在多线程里混用，也不能和 <code>EventStream</code> 混用。</p>
 
 <h2>四、按键的两种信息</h2>
@@ -97,7 +97,7 @@ loop {
 </tbody>
 </table>
 
-<p>注意 <kbd>Esc</kbd> 单个键是 <code>KeyCode::Esc</code>；方向键会被 crossterm 解析成对应的
+<p>注意单个 <kbd>Esc</kbd> 键是 <code>KeyCode::Esc</code>；方向键会被 crossterm 解析成对应的
 <code>KeyCode</code>，你<strong>不用</strong>像 C 版那样自己读 <code>\x1b[A</code> 字节序列。</p>
 
 <h2>五、常见坑</h2>

@@ -26,8 +26,8 @@
 
 <h2>为什么需要 raw mode</h2>
 
-<p>默认情况下，你的终端是「行缓冲 + 回显」的：你输入的字符先由终端自己显示出来，直到你按回车，
-一整行才交给程序。shell 就靠这个工作——它拿到的是一次一整行。</p>
+<p>默认情况下，你的终端处于「行缓冲 + 回显」模式：你输入的字符先由终端自己显示出来，直到你按回车，
+一整行才交给程序。shell 正是靠这一点工作——它每次拿到的就是一整行。</p>
 
 <p>编辑器不能这样。它需要三件事同时成立：</p>
 
@@ -38,20 +38,20 @@
   不能被终端或信号处理抢先解释掉。</li>
 </ul>
 
-<p>把终端从这种「礼貌的」模式切到「原始」模式，就叫 <strong>raw mode</strong>。底层是通过
+<p>把终端从这种「礼貌的」模式切换到「原始」模式，这个过程就叫进入 <strong>raw mode</strong>（原始模式）。底层是通过
 <code>termios</code> 修改一堆标志位（<code>ICANON</code>、<code>ECHO</code>、<code>ISIG</code>……），
-原版 C 版 kilo 用了几十行代码来做这件事。<strong>我们把它交给 crossterm</strong>，把精力留给编辑器逻辑和 Rust 本身。</p>
+原版的 C 语言 kilo 要用几十行代码才能做到。<strong>我们把它交给 crossterm</strong>，把精力留给编辑器逻辑和 Rust 本身。</p>
 
 <h2>两个现代 Rust 的关键选择</h2>
 
-<p>在写第一行代码之前，先看两个「怎么做才是现代做法」的决策。它们来自
+<p>在写第一行代码之前，先看两个关于「怎样才算现代做法」的决策。它们来自
 <a href="https://github.com/apollographql/rust-best-practices">Apollo《Rust Best Practices》</a>，
 也是本课程会一直沿用的风格。</p>
 
 <h3>① 用 RAII 守卫管理「成对出现」的操作</h3>
 
 <p>C 版用 <code>atexit(disableRawMode)</code> 和手动 <code>exit()</code> 来保证终端被恢复。
-Rust 里没有 <code>try/finally</code>，取而代之的、也是更地道的做法是 <strong>RAII</strong>：
+Rust 里没有 <code>try/finally</code>，取而代之、也更地道的做法是 <strong>RAII</strong>：
 把「清理」写进一个类型的 <code>Drop</code>，只要它离开作用域，清理就一定发生——
 <strong>正常返回、<code>?</code> 提前返回、甚至 panic 展开</strong>，全都覆盖。</p>
 
@@ -64,7 +64,7 @@ Rust 里没有 <code>try/finally</code>，取而代之的、也是更地道的�
 <h3>② 二进制程序的错误用 <code>Result</code> + <code>?</code></h3>
 
 <p>Apollo 手册的建议是：<strong>库</strong>用 <code>thiserror</code> 定义精确错误类型；
-<strong>二进制</strong>用 <code>anyhow</code>/<code>eyre</code> 这类擦除类型、强调易用的方案。
+<strong>二进制</strong>用 <code>anyhow</code>/<code>eyre</code> 这类类型擦除、强调易用的方案。
 本项目用仓库里已有的 <a href="https://docs.rs/color-eyre/0.6.5/color_eyre/"><code>color-eyre</code></a>
 （<code>eyre</code> 的彩色报告版）。原则是：<strong>能返回 <code>Result</code> 就不要 panic，不要到处 <code>unwrap()</code></strong>。</p>
 
@@ -82,7 +82,7 @@ Rust 里没有 <code>try/finally</code>，取而代之的、也是更地道的�
 
 <div class="callout">
 <p><span class="tag">注意</span> <code>event::read()</code> 返回的 <code>Event</code> 是一个<strong>枚举</strong>——
-终端不只发键盘事件，还有窗口大小变化（<code>Resize</code>）等。我们会用 <code>let … else</code>
+终端发出的不只是键盘事件，还有窗口大小变化（<code>Resize</code>）等。我们会用 <code>let … else</code>
 只挑出键盘事件，其余直接 <code>continue</code>。</p>
 </div>
 
@@ -113,7 +113,7 @@ pedantic = { level = "warn", priority = 3 }</code></pre>
 
 <div class="task">
 <p><span class="tag">任务 2</span> 写下事件循环</p>
-<p>把 <code>src/main.rs</code> 清空，<strong>亲手敲</strong>下下面的代码（别复制——肌肉记忆也是学习的一部分）：</p>
+<p>把 <code>src/main.rs</code> 清空，<strong>亲手敲一遍</strong>下面的代码（别复制——肌肉记忆也是学习的一部分）：</p>
 <pre><code>use std::io::{self, Write};
 
 use color_eyre::Result;
@@ -205,7 +205,7 @@ fn main() -&gt; Result&lt;()&gt; {
 <ol>
 <li>随便敲几个字符，比如 <code>a</code>、方向键 <kbd>↑</kbd>、<kbd>Ctrl</kbd>+<kbd>S</kbd>。
   你会看到形如 <code>KeyEvent { code: Char('a'), modifiers: NONE, ... }</code> 的输出。</li>
-<li>注意：终端<strong>没有回显</strong>你敲的字符本身，只有程序打印的结构——这正是 raw mode 在起作用。</li>
+<li>注意：终端<strong>不会回显</strong>你敲的字符本身，只显示程序打印出来的结构体——这正是 raw mode 在起作用。</li>
 <li>按 <kbd>Ctrl</kbd>+<kbd>Q</kbd> 退出，回到 shell，一切正常。</li>
 </ol>
 <p>如果顺序不对（没退出、或退出后终端怪怪的），把现象记下来，直接问我。</p>
@@ -310,7 +310,7 @@ shell 可以正常用。这就是 RAII 的威力：你并没有写任何「出�
   <a class="next" href="0002-a-clean-canvas.html">第 2 课 · 干净的画布 →</a>
 </div>
 
-<p class="footer-note">kilo-rs 课程 · Lesson 0001。总目录见 <a href="../MISSION.md">MISSION.md</a>。</p>
+<p class="footer-note">kilo-rs 课程 · Lesson 0001。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 </body>
 </html>

@@ -11,7 +11,7 @@
 <h1>第 3 课 · 打开一个文件</h1>
 <p class="lesson-meta">kilo-rs 课程 · Lesson 0003 · 预计 30–40 分钟 · 需要动手写代码</p>
 
-<p class="lede">前两课我们造好了画布，但画布上只有 <code>~</code>。这一课让编辑器真正<strong>打开文件</strong>：
+<p class="lede">前两课我们搭好了画布，但画布上只有 <code>~</code>。这一课让编辑器真正<strong>打开文件</strong>：
 从命令行拿到路径、读进内存、渲染到屏幕上。你的<strong>第一个数据结构</strong>要登场了。</p>
 
 <div class="win">
@@ -56,7 +56,7 @@
 
 <div class="callout">
 <p><span class="tag">现代写法</span> 参数写成 <code>&amp;[String]</code> 而不是 <code>&amp;Vec&lt;String&gt;</code>。
-切片是更通用的类型：<code>Vec</code>、数组、以及切片本身都能自动传进来。<strong>函数尽量收窄到它真正需要的能力。</strong>
+切片是更通用的类型：<code>Vec</code>、数组以及切片本身都能自动传入。<strong>函数尽量收窄到它真正需要的能力。</strong>
 （Apollo《Rust Best Practices》§1.1）</p>
 </div>
 
@@ -189,15 +189,15 @@ fn welcome_line(cols: u16) -&gt; String {
 <h2>逐段拆解</h2>
 
 <ul>
-<li><strong>读文件放在 <code>Terminal::enter()</code> 之前</strong>：这是刻意的。文件打开失败时，
+<li><strong>读文件放在 <code>Terminal::enter()</code> 之前</strong>：这是有意为之。文件打开失败时，
   <code>?</code> 会让 <code>main</code> 提前返回，此时<strong>还没进备用屏幕</strong>，
-  <code>color-eyre</code> 的报错能干干净净打在正常屏幕上。凡是「可能失败的准备工作」，
+  <code>color-eyre</code> 的报错能干干净净地打印在正常屏幕上。凡是「可能失败的准备工作」，
   都安排在接管屏幕之前。</li>
 <li><code>fs::read_to_string(&amp;path)?</code>：一次读成整块 <code>String</code>。它要求文件是合法 UTF-8——
   二进制文件会报错，这是本课的一个已知限制。</li>
 <li><code>.lines().map(str::to_owned).collect()</code>：切行、把每行 <code>&amp;str</code>
   转成拥有的 <code>String</code>、收进 <code>Vec</code>。目标类型由后面 <code>draw(&amp;lines)</code> 的签名推导出来。</li>
-<li><code>match … { Some(path) =&gt; …, None =&gt; Vec::new() }</code>：有文件名就读，没有就一个空 <code>Vec</code>。
+<li><code>match … { Some(path) =&gt; …, None =&gt; Vec::new() }</code>：有文件名就读，没有就构造一个空 <code>Vec</code>。
   空 <code>Vec</code> 会让 <code>draw</code> 走欢迎语分支。</li>
 <li><code>lines.get(y as usize)</code>：<code>Vec</code> 的 <code>.get</code> 返回 <code>Option&lt;&amp;String&gt;</code>，
   正好表达「这一行可能不存在」。不存在就走补 <code>~</code> 的分支。<code>y as usize</code> 是 u16 → usize 的安全加宽转换。</li>
@@ -215,7 +215,7 @@ cargo run
 cargo run -- 不存在的文件.txt</code></pre>
 <ol>
 <li>文件内容铺满屏幕；底部多出来的行是 <code>~</code>。</li>
-<li>故意用一个<strong>很长的行</strong>（比如把窗口拖窄），看行被截断而不是换行、错位。</li>
+<li>故意制造一个<strong>很长的行</strong>（比如把窗口拖窄），观察行是被截断，而不是换行或错位。</li>
 <li>不带参数 → 欢迎语。</li>
 <li>文件名写错 → 干净的错误报告（还在正常屏幕上）。</li>
 </ol>
@@ -226,7 +226,7 @@ cargo run -- 不存在的文件.txt</code></pre>
 <ul>
 <li><strong>只能显示前 <code>rows</code> 行</strong>：还不能滚动。下一步就做光标和滚动。</li>
 <li><strong>必须是合法 UTF-8</strong>：<code>read_to_string</code> 对二进制文件会报错。
-  原版 C kilo 是字节导向的，这里是个真实取舍——以后要当真编辑器用时再处理。</li>
+  原版 C kilo 是字节导向的，这里是一个真实的取舍——等以后真要把它做成编辑器时再处理。</li>
 <li><strong>宽字符没处理</strong>：超长行按「字符数」截断，但中文占 2 列，还不精确。</li>
 </ul>
 
@@ -302,7 +302,7 @@ cargo run -- 不存在的文件.txt</code></pre>
   <a class="next" href="0004-first-refactor.html">第 4 课 · 第一次重构 →</a>
 </div>
 
-<p class="footer-note">kilo-rs 课程 · Lesson 0003。总目录见 <a href="../MISSION.md">MISSION.md</a>。</p>
+<p class="footer-note">kilo-rs 课程 · Lesson 0003。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 </body>
 </html>

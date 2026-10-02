@@ -13,13 +13,13 @@
 
 <p class="lede">这一课<strong>一个新功能都不加</strong>。我们要把已经写出来的东西重新摆放：
 终端生命周期搬进 <code>src/tui.rs</code>，逻辑搬进 <code>src/lib.rs</code>，
-<code>src/main.rs</code> 只剩一层薄外壳。这是你「拆模块」这项成功标准的第一次落地。</p>
+<code>src/main.rs</code> 只剩一层薄外壳。这是「拆模块」这条成功标准的第一次落地。</p>
 
 <div class="win">
 <p><span class="tag">本课成果</span></p>
 <ul>
 <li>一个 <code>lib.rs</code> + <code>tui.rs</code> + 薄 <code>main.rs</code> 的三文件结构；</li>
-<li><code>tui</code> 成为第一个<strong>深模块</strong>：对外只有两个东西，内部藏着所有终端恢复逻辑；</li>
+<li><code>tui</code> 成为第一个<strong>深模块</strong>：对外只暴露两个入口，内部藏着全部终端恢复逻辑；</li>
 <li>行为<strong>和上一课一模一样</strong>（打开文件、重画、Ctrl-Q 退出、panic 干净恢复）；</li>
 <li>从此以后，逻辑可以被 <code>tests/</code> 里的集成测试 <code>use kilo::…</code> 直接测试。</li>
 </ul>
@@ -30,7 +30,7 @@
 <p>重构的时机不是「文件太长」，而是「接缝清晰了」。终端生命周期恰好是最干净的一刀：</p>
 
 <ul>
-<li><strong>概念单一</strong>：raw mode、备用屏幕、光标——它们必须成对开关，是一个概念。</li>
+<li><strong>概念单一</strong>：raw mode、备用屏幕、光标——它们必须成对开关，本质上是一个概念。</li>
 <li><strong>接口极小</strong>：对外只需要「进入」和「装 panic hook」两个入口。</li>
 <li><strong>零耦合</strong>：它完全不知道「编辑器」「文件」「光标」是什么。</li>
 </ul>
@@ -57,7 +57,7 @@
 
 <div class="task">
 <p><span class="tag">任务 1</span> 新建 <code>src/tui.rs</code></p>
-<p>把 <code>Terminal</code>、<code>restore</code>、<code>install_panic_hook</code> 原样剪到这里：</p>
+<p>把 <code>Terminal</code>、<code>restore</code>、<code>install_panic_hook</code> 原样搬到这里：</p>
 <pre><code>//! Terminal lifecycle management.
 //!
 //! Wraps the must-be-paired operations (raw mode, alternate screen, cursor) in a
@@ -125,7 +125,7 @@ fn restore() {
 
 <div class="task">
 <p><span class="tag">任务 2</span> 新建 <code>src/lib.rs</code></p>
-<p>把 <code>main</code> 里的<strong>逻辑</strong>（读文件、事件循环、渲染）搬过来，改名成 <code>run</code>，
+<p>把 <code>main</code> 里的<strong>逻辑</strong>（读文件、事件循环、渲染）搬过来，改名为 <code>run</code>，
 并声明 <code>tui</code> 模块：</p>
 <pre><code>//! kilo-rs: a text editor rewritten from kilo in Rust.
 //!
@@ -260,7 +260,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 <li><code>pub mod tui;</code> / <code>pub fn run()</code> / <code>pub struct Terminal</code>：
   <strong>二进制是另一个 crate</strong>，只能看到库的 <code>pub</code> 项。所以 main 用得到的东西必须是 <code>pub</code>。</li>
 <li><code>fn restore()</code> <strong>保持私有</strong>：这是「深模块」的关键。对外只需要「进入」和「装 hook」，
-  恢复的细节是不变式，不给外面机会去乱用。接口小，实现大——这就是深度。</li>
+  恢复的细节属于内部不变式，不给外界滥用的机会。接口小，实现大——这就是深度。</li>
 <li><code>use crate::tui::Terminal;</code>：Rust 2018 起，路径用 <code>crate::</code> 表示「本 crate 内部」。</li>
 <li><code>//!</code> 是模块/ crate 级文档，写在文件顶部；<code>///</code> 是条目文档，贴在 <code>fn</code>/<code>struct</code> 上。
   <code># Errors</code> 段是因为本项目的 <code>clippy::pedantic</code> 要求公开的 <code>Result</code> 函数说明错误条件——
@@ -296,7 +296,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 </ul>
 <details>
 <summary>看答案</summary>
-<p>第一个。把恢复藏起来，外面就无法「只退出备用屏幕却不关 raw mode」这种半吊子操作，
+<p>第一个。把恢复藏起来，外面就无法做出「只退出备用屏幕却不关 raw mode」这种半吊子操作，
 接口因此变小、变安全。这正是深模块的意义。</p>
 </details>
 </div>
@@ -353,7 +353,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
   <a class="next" href="0005-cursor-and-scrolling.html">第 5 课 · 光标与滚动 →</a>
 </div>
 
-<p class="footer-note">kilo-rs 课程 · Lesson 0004。总目录见 <a href="../MISSION.md">MISSION.md</a>。</p>
+<p class="footer-note">kilo-rs 课程 · Lesson 0004。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 </body>
 </html>

@@ -11,9 +11,9 @@
 <h1>第 5 课 · 光标与滚动</h1>
 <p class="lesson-meta">kilo-rs 课程 · Lesson 0005 · 预计 35–45 分钟 · 加功能 + 第一次写测试</p>
 
-<p class="lede">文件能显示了，但你只能看第一屏，而且没有光标。<br>
+<p class="lede">文件已经能显示了，但你只能看到第一屏，而且还没有光标。<br>
 这一课让光标动起来、让画面跟着它滚动——同时第一次把「一堆相关状态」收进一个结构
-<code>Editor</code>，并<strong>为它写单元测试</strong>。还记得第 4 课为什么拆 <code>lib.rs</code> 吗？回报来了。</p>
+<code>Editor</code>，并<strong>为它写单元测试</strong>。还记得第 4 课为什么要拆出 <code>lib.rs</code> 吗？现在正是回报的时候。</p>
 
 <div class="win">
 <p><span class="tag">本课成果</span></p>
@@ -33,7 +33,7 @@
 <thead><tr><th>量</th><th>含义</th></tr></thead>
 <tbody>
 <tr><td><code>cx</code> / <code>cy</code></td><td>光标在<strong>文件</strong>里的位置（列、行）。</td></tr>
-<tr><td><code>rowoff</code> / <code>coloff</code></td><td><strong>视口</strong>左上角对应文件的哪一行、哪一列。</td></tr>
+<tr><td><code>rowoff</code> / <code>coloff</code></td><td><strong>视口</strong>左上角对应文件中的哪一行、哪一列。</td></tr>
 <tr><td>屏幕位置</td><td><code>cy - rowoff</code> 行、<code>cx - coloff</code> 列。</td></tr>
 </tbody>
 </table>
@@ -42,7 +42,7 @@
 
 <div class="callout">
 <p><span class="tag">一个细节</span> 上下移动时，如果新行更短，列要<strong>夹回行尾</strong>。
-比如在第 5 列按 ↓ 落到一条只有 3 个字符的行，光标应停在列 3。原版 kilo 就是这么做的。</p>
+比如光标在第 5 列时按 ↓，落到一条只有 3 个字符的行，光标应停在列 3。原版 kilo 就是这么做的。</p>
 </div>
 
 <div class="callout">
@@ -59,12 +59,12 @@
 
 <h2>为什么现在收进结构</h2>
 
-<p>上一课状态还是局部变量，现在一下多出 4 个（<code>cx</code>/<code>cy</code>/<code>rowoff</code>/<code>coloff</code>），
-而且它们<strong>总是一起被读写</strong>——这就是「接缝清晰了」。把它们装进 <code>Editor</code>，
+<p>上一课里，状态还是局部变量；现在一下子多出 4 个（<code>cx</code>/<code>cy</code>/<code>rowoff</code>/<code>coloff</code>），
+而且它们<strong>总是一起被读写</strong>——这就是「接缝清晰了」的体现。把它们装进 <code>Editor</code>，
 行为（移动、滚动）也归它。关键点：<strong><code>Editor</code> 完全不碰终端</strong>。</p>
 
 <div class="win">
-<p><span class="tag">此刻兑现</span> 因为 <code>Editor</code> 不知道终端的存在，它可以直接被单元测试：
+<p><span class="tag">此刻兑现</span> 因为 <code>Editor</code> 不知道终端的存在，可以直接对它做单元测试：
 给定一串操作，断言光标/视口。这正是「把逻辑放进库」换来的东西——<strong>不启动界面也能测核心逻辑</strong>。</p>
 </div>
 
@@ -374,9 +374,9 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 <li><strong><code>Editor</code> 不 import 任何 crossterm</strong>：这是有意的。它只管状态，
   「按键怎么映射到移动」由 <code>lib.rs</code> 的事件循环负责。于是 <code>Editor</code> 可测、可复用、
   以后换 TUI 库也不受影响。</li>
-<li><code>Move</code> 派生 <code>Copy</code>：它是个小的「标签」枚举，按值传递最自然。
-  不派生 <code>Copy</code> 的话，<code>clippy::pedantic</code> 会提示「按值传入但没消费」，让你改成引用——
-  一个不该按引用传的值类型反而被建议传引用，就是这个 lint 在提醒你补 <code>Copy</code>。</li>
+<li><code>Move</code> 派生 <code>Copy</code>：它是一个小巧的「标签」枚举，按值传递最自然。
+  若不派生 <code>Copy</code>，<code>clippy::pedantic</code> 会提示「按值传入但没消费」，让你改成引用——
+  一个本不该按引用传的值类型，反倒被建议传引用；这个 lint 正是在提醒你补上 <code>Copy</code>。</li>
 <li>getter 上的 <code>#[must_use]</code>：<code>clippy::pedantic</code> 要求公开的「返回值的函数」标注
   <code>#[must_use]</code>——因为忽略 <code>cursor()</code> 的返回值多半是写错了。</li>
 <li><code>line_len</code> 用 <code>chars().count()</code> 而不是 <code>len()</code>：
@@ -384,7 +384,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 <li><code>Move::Right</code> 在行尾时跳到下一行行首：这是编辑器的常见行为，也让「按右箭头穿过整个文件」成立。</li>
 <li><code>scroll</code> 的四条 <code>if</code>：把光标夹进 <code>[rowoff, rowoff + rows)</code> 与
   <code>[coloff, coloff + cols)</code>。之后 <code>cursor_col = cx - coloff</code> 必然落在屏幕内，
-  所以那句 <code>try_from</code> 不会失败——用 <code>unwrap_or</code> 是为了不 panic，也不需要 <code>unsafe</code> 假设。</li>
+  所以那句 <code>try_from</code> 不会失败——用 <code>expect</code> 把这个不变式写下来：万一真被破坏就立刻报警，而不是静默给错位置。</li>
 <li><code>draw</code> 需要 <code>&amp;mut Editor</code>，因为它顺手调用了 <code>scroll</code>（调整视口属于「渲染前的一次状态更新」）。
   以后拆 <code>ui.rs</code> 时，我们会把「滚动」和「纯渲染」分得更干净。</li>
 </ul>
@@ -434,7 +434,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 </div>
 
 <div class="quiz">
-<p class="q">3. 在一条长行的第 8 列按 ↓ 到一条只有 5 个字符的行，光标会到哪？</p>
+<p class="q">3. 光标停在一条长行的第 8 列，按 ↓ 落到一条只有 5 个字符的行，光标会到哪？</p>
 <ul>
 <li>列 5，被夹回行尾</li>
 <li>列 8，保持不变</li>
@@ -471,7 +471,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
   <a class="next" href="0006-chars-vs-columns.html">第 6 课 · 字符 ≠ 列 →</a>
 </div>
 
-<p class="footer-note">kilo-rs 课程 · Lesson 0005。总目录见 <a href="../MISSION.md">MISSION.md</a>。</p>
+<p class="footer-note">kilo-rs 课程 · Lesson 0005。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 </body>
 </html>

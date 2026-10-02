@@ -11,7 +11,7 @@
 <h1>第 6 课 · 字符 ≠ 列（tab 与宽字符）</h1>
 <p class="lesson-meta">kilo-rs 课程 · Lesson 0006 · 预计 40–50 分钟 · 修一个真 bug + 引入 Row</p>
 
-<p class="lede">你在第 5 课末尾发现：光标过中文时「两下才走一个字」。这是个真 bug，根因是
+<p class="lede">你在第 5 课末尾发现：光标经过中文时「要按两下才走一个字」。这是个真 bug，根因是
 <strong>「1 个字符」不等于「1 列」</strong>。这一课引入 <code>Row</code>，把
 <strong>逻辑字符位置 <code>cx</code></strong> 和 <strong>显示列 <code>rx</code></strong> 彻底分开，
 一次性修好<strong>光标、截断、横向滚动</strong>三处。</p>
@@ -19,8 +19,8 @@
 <div class="win">
 <p><span class="tag">本课成果</span></p>
 <ul>
-<li>光标过中文 / 全角字符时，一次跨越 2 列，位置正确；</li>
-<li>tab 展开成制表位（不再是让终端自己瞎展开）；</li>
+<li>光标经过中文 / 全角字符时，一次跨越 2 列，位置正确；</li>
+<li>tab 展开为制表位（不再交给终端自行展开）；</li>
 <li>超宽行按<strong>列</strong>截断，不再触发终端自动换行、错位；</li>
 <li>新增 <code>src/row.rs</code> 和一批单元测试（共 <strong>8 个</strong>），全部不依赖终端。</li>
 </ul>
@@ -28,15 +28,15 @@
 
 <h2>为什么 char ≠ column</h2>
 
-<p>光标用「第几个字符」标记很自然，但屏幕是按「第几列」画的。这两者只在「所有字符都占 1 列」时才相等。
+<p>用「第几个字符」来标记光标很自然，但屏幕是按「第几列」来画的。这两者只在「所有字符都占 1 列」时才相等。
 真实情况里有三种反例：</p>
 
 <table>
 <thead><tr><th>字符</th><th>占几列</th><th>例子</th></tr></thead>
 <tbody>
-<tr><td>制表符 <code>\t</code></td><td>1 到 8 列（对齐到下一个制表位）</td><td>取决于它当前在第几列</td></tr>
+<tr><td>制表符 <code>\t</code></td><td>1 到 8 列（对齐到下一个制表位）</td><td>取决于它当前所在的列</td></tr>
 <tr><td>CJK / 全角字符</td><td><strong>2 列</strong></td><td>中文、日文、……</td></tr>
-<tr><td>组合字符</td><td><strong>0 列</strong></td><td>附在前一个字符上的声调符号等</td></tr>
+<tr><td>组合字符</td><td><strong>0 列</strong></td><td>附加在前一个字符上的声调符号等</td></tr>
 </tbody>
 </table>
 
@@ -71,10 +71,10 @@
 </tbody>
 </table>
 <p>本课程里 <code>cx</code> 数的是<strong>第二种</strong>（Rust 的 <code>char</code>，一个汉字 = 1），
-<code>rx</code> 数的是<strong>第四种</strong>（显示列，一个汉字 = 2）。所以「两下一个中文」
-不是在说字符，而是在拿「按键次数」和「显示列」比较。</p>
-<p><strong>已知局限</strong>：按码点计，<code>e</code> + 组合音会算 2 个、需要按两次退格才删掉视觉上的一个
-<code>é</code>；emoji 家族同理。要做「按字素簇编辑」，是以后的一课。</p>
+<code>rx</code> 数的是<strong>第四种</strong>（显示列，一个汉字 = 2）。所以「两下才走一个中文」
+说的不是字符，而是在拿「按键次数」和「显示列」做比较。</p>
+<p><strong>已知局限</strong>：按码点计数，<code>e</code> + 组合音会被算成 2 个字符，需要按两次退格才能删掉视觉上的一个
+<code>é</code>；emoji 家族同理。「按字素簇编辑」留到以后的一课。</p>
 </div>
 
 <h2>动手</h2>
@@ -467,7 +467,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
   <code>self.chars.iter().fold(0, |col, &amp;ch| advance(col, ch))</code> 读作「从第 0 列开始，
   把每个字符依次交给 <code>advance</code> 推进列」。<code>iter()</code> 产出的是 <code>&amp;char</code>，
   模式 <code>&amp;ch</code> 把它拆成 <code>ch: char</code>（<code>char</code> 是 <code>Copy</code>，拆引用即复制），
-  等价于 <code>|col, ch| advance(col, *ch)</code>。等价的手写循环：<code>let mut col = 0; for &amp;ch in &amp;self.chars { col = advance(col, ch); }</code>。</li>
+  等价于 <code>|col, ch| advance(col, *ch)</code>。等价的手写循环写法：<code>let mut col = 0; for &amp;ch in &amp;self.chars { col = advance(col, ch); }</code>。</li>
 <li><code>render_window</code> 一次做完三件事：<strong>tab 展开</strong>、<strong>按列截断</strong>、
   <strong>宽字符跨界用空格占位</strong>（半个字不画，免得字形被切一半）。它接收的是<strong>显示列</strong>窗口。</li>
 <li><code>Editor::cursor()</code> 现在返回 <code>(显示列, 行)</code>——<strong>不是</strong>字符序号。
@@ -568,7 +568,7 @@ abcdefg\tY    a b c d e f g Y        # Y 在第 8 列   ✅ 对齐
   <a class="next" href="#">第 7 课 · 编辑与保存（待生成）</a>
 </div>
 
-<p class="footer-note">kilo-rs 课程 · Lesson 0006。总目录见 <a href="../MISSION.md">MISSION.md</a>。</p>
+<p class="footer-note">kilo-rs 课程 · Lesson 0006。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 </body>
 </html>
