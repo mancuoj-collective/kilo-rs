@@ -72,7 +72,7 @@
 
 <div class="task">
 <p><span class="tag">任务 1</span> 新建 <code>src/editor.rs</code></p>
-<pre><code>//! Editable editor state: cursor position and viewport scrolling.
+<pre><code class="language-rust">//! Editable editor state: cursor position and viewport scrolling.
 //!
 //! This layer never touches the terminal: it only tracks where the cursor is and which
 //! row/column the screen starts at. Because it doesn't depend on the terminal, it can be
@@ -238,7 +238,7 @@ mod tests {
 <div class="task">
 <p><span class="tag">任务 2</span> 更新 <code>src/lib.rs</code></p>
 <p>声明 <code>editor</code> 模块，用 <code>Editor</code> 驱动事件循环，渲染时按视口偏移取内容：</p>
-<pre><code>//! kilo-rs: a text editor rewritten from kilo in Rust.
+<pre><code class="language-rust">//! kilo-rs: a text editor rewritten from kilo in Rust.
 //!
 //! Logic lives in the library (so integration tests can reach it); `main.rs` is a thin
 //! shell. Terminal lifecycle is in [`tui`], editor state in [`editor`]; rendering and the
@@ -363,7 +363,7 @@ fn welcome_line(cols: u16) -&gt; String {
 
 <div class="task">
 <p><span class="tag">任务 3</span> 运行 + 测试 + clippy</p>
-<pre><code>cargo run -- kilo.c        # arrow keys: the screen follows the cursor
+<pre><code class="language-bash">cargo run -- kilo.c        # arrow keys: the screen follows the cursor
 cargo test                 # 3 unit tests, no terminal needed
 cargo clippy --all-targets -- -D warnings</code></pre>
 </div>
@@ -457,8 +457,6 @@ cargo clippy --all-targets -- -D warnings</code></pre>
   <a href="../reference/architecture.html">架构与文件结构</a>。</li>
 </ul>
 
-<h2>我是你的老师，随时问</h2>
-
 <div class="callout">
 <p><code>#[must_use]</code> 到底什么时候该加、为什么 <code>Move</code> 需要 <code>Copy</code>、
 <code>scroll</code> 的公式怎么推、为什么要写单元测试而不是手动试……任何卡住的地方直接问。
@@ -473,5 +471,6 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 
 <p class="footer-note">kilo-rs 课程 · Lesson 0005。总目录见 <a href="../index.html">课程目录</a>。</p>
 
+<script src="../assets/prism.min.js" defer></script>
 </body>
 </html>

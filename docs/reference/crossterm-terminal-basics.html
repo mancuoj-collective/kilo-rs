@@ -31,7 +31,7 @@
 <p>不要手写 <code>enable_raw_mode()</code> / <code>disable_raw_mode()</code> 配对——用一个
 <code>Drop</code> 守卫，让编译器保证成对：</p>
 
-<pre><code>use std::io;
+<pre><code class="language-rust">use std::io;
 
 use crossterm::terminal;
 
@@ -62,7 +62,7 @@ let _guard = RawModeGuard::enter()?;</code></pre>
 
 <h2>三、事件循环骨架（现代写法）</h2>
 
-<pre><code>use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+<pre><code class="language-rust">use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 
 loop {
     let Event::Key(key) = event::read()? else {
@@ -115,7 +115,7 @@ loop {
 <h2>六、错误处理</h2>
 
 <p>本项目 <code>main</code> 用 <code>color-eyre</code>：</p>
-<pre><code>use color_eyre::Result;
+<pre><code class="language-rust">use color_eyre::Result;
 
 fn main() -&gt; Result&lt;()&gt; {
     color_eyre::install()?;
@@ -136,5 +136,6 @@ fn main() -&gt; Result&lt;()&gt; {
   <a class="next" href="../lessons/0001-raw-mode-and-events.html">第 1 课 · 接管终端 →</a>
 </div>
 
+<script src="../assets/prism.min.js" defer></script>
 </body>
 </html>

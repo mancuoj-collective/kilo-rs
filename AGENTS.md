@@ -11,6 +11,15 @@
 - **现代写法**：采用现代惯用法与 best practice，不照抄 hecto / C 版直译；依据 Apollo《Rust Best Practices》。
 - **每课能跑**：每一步都要 `cargo run` 能看到变化；先体验问题，再引入解法。
 - **质量门**：`cargo clippy --all-targets -- -D warnings` 零告警、`cargo fmt --check` 干净、禁用 `unsafe`。
+- **站点高亮**：代码块标 `class="language-rust"`（shell 用 `bash`、`Cargo.toml` 用 `toml`），
+  并在 `</body>` 前引入 `<script src="../assets/prism.min.js" defer></script>`（`docs/index.html` 用 `assets/…`）。
+  高亮由本地内置的 Prism（含 rust / bash / toml）完成，无需联网。
+- **站点样式**：视觉遵循 **kami 1.17**——羊皮纸底 `#f5f4ed`、单一墨蓝 `#1B365D`、暖灰、衬线
+  （字重锁 500，不用粗体 / 斜体）。遵循其「**减法规则**」：用**字号**做层级、**间距**做分组、
+  **墨蓝**做强调；不要装饰性的短线、左竖条或强调边框——提示框只有「象牙底 + 圆角」，代码块也只有
+  「象牙底 + 圆角（无边框）」，语义由纯文字墨蓝 `.tag` 标签承担。样式集中在 `docs/assets/style.css`，
+  新页面只写正文结构。中文字体为 **仓耳今楷02**（个人使用免费），已按当前用字子集为 woff2 放在
+  `docs/assets/fonts/`；**新增汉字后需重新子集化**，否则新字会回退到系统字体。
 - **重构即搬家**：按接缝拆模块，不按行数；每一刀行为不变，不一边重构一边加功能。
 - **让学习者敲**：不代劳。
 

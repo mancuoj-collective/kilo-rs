@@ -56,3 +56,13 @@ src/
 - 原版源码：<https://github.com/antirez/kilo>
 - Rust 版对照：<https://www.flenker.blog/hecto/>
 - 最佳实践：<https://github.com/apollographql/rust-best-practices>
+
+## 许可
+
+- 本项目自己的代码与课程内容：**MIT**（见 [`LICENSE`](LICENSE)）。
+- 第三方组件各自遵循其原始许可：
+  - `kilo.c` —— 原版 [antirez/kilo](https://github.com/antirez/kilo)。
+  - 中文字体 **仓耳今楷02（TsangerJinKai02）**：个人使用免费，商用需向 [tsanger.cn](https://tsanger.cn) 授权；
+    本站按课程用字子集为 woff2 自托管，仅用于本课程展示。
+  - Rust 依赖（crossterm / color-eyre / unicode-width）：MIT 或 Apache-2.0。
+  - 代码高亮 [Prism.js](https://prismjs.com/)：MIT。

@@ -1,25 +1,50 @@
 /* kilo-rs 课程 · 共享样式
-   所有 lesson 与 reference 文档都链接这个文件，保证课程外观一致。
-   设计目标：屏幕可读、打印友好、长文不累。 */
+   设计语言参考 **kami 1.17**（暖色羊皮纸 + 单一墨蓝 + 衬线层级）。
+   核心是 kami 的「减法规则」：**用字号做层级、间距做分组、墨蓝做强调**；
+   装饰性的短线、左竖条、强调边框一律不用。 */
+
+/* —— 中文字体：仓耳今楷02（kami 同款），按课程用字子集化为 woff2，自托管 ——
+   授权：个人使用免费、商用需向 tsanger.cn 授权（详见仓库 README 的「许可」） */
+@font-face {
+  font-family: "TsangerJinKai02";
+  src: url("fonts/TsangerJinKai02-W04.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "TsangerJinKai02";
+  src: url("fonts/TsangerJinKai02-W05.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
-  --ink: #1d1b18;
-  --ink-soft: #3a352e;
-  --paper: #fdfbf6;
-  --muted: #6b645b;
-  --rule: #e2dbcd;
-  --accent: #1f4e79;
-  --accent-border: #b9cfe0;
-  --accent-soft: #eaf1f7;
-  --green: #2f6b3a;
-  --green-border: #bcd9c2;
-  --green-soft: #eaf4ec;
-  --amber: #8a5a00;
-  --amber-border: #e6cf9a;
-  --amber-soft: #fbf3e0;
-  --code-bg: #f4f0e7;
-  --code-ink: #2a2722;
+  /* —— kami 调色板：暖色、单一强调色、无冷灰 —— */
+  --parchment: #f5f4ed;
+  --ivory: #faf9f5;
+  --inline-code: #f0eee6;
+  --warm-sand: #e8e6dc;
+  --near-black: #141413;
+  --dark-warm: #3d3d3a;
+  --olive: #504e49;
+  --stone: #6b6a64;
+  --brand: #1B365D;
+  --ink-light: #2D5A8A;
+  --border: #e8e6dc;
+  --border-soft: #e5e3d8;
+  --tag-bg: #E4ECF5;
+
+  /* 单一衬线：正文与标题同一字体族，--sans 只是别名 */
+  --serif: "TsangerJinKai02", "Source Han Serif SC", "Noto Serif CJK SC",
+    "Songti SC", "STSong", Charter, Georgia, Palatino, "Times New Roman", serif;
+  --sans: var(--serif);
+  --mono: "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas,
+    "TsangerJinKai02", "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", monospace;
+
   --maxw: 46rem;
+  --radius: 8px; /* screen：块级用 8px */
 }
 
 * { box-sizing: border-box; }
@@ -30,147 +55,189 @@ body {
   margin: 0 auto;
   max-width: var(--maxw);
   padding: 3.5rem 1.5rem 6rem;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: "Charter", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
-    "Songti SC", "Noto Serif SC", serif;
-  font-size: 1.06rem;
-  line-height: 1.75;
+  background: var(--parchment);
+  color: var(--near-black);
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  letter-spacing: 0.2pt;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3 { line-height: 1.25; font-weight: 640; }
-h1 { font-size: 2.05rem; margin: 0 0 .35rem; letter-spacing: -.01em; }
-h2 {
-  font-size: 1.35rem; margin: 2.8rem 0 .8rem;
-  padding-bottom: .35rem; border-bottom: 1px solid var(--rule);
-}
-h3 { font-size: 1.1rem; margin: 1.8rem 0 .5rem; }
+/* —— 标题：层级靠字号与间距，不靠线条 —— */
+h1, h2, h3 { font-weight: 500; line-height: 1.25; color: var(--near-black); }
+h1 { font-size: 1.9rem; margin: 0 0 .35rem; }
+h2 { font-size: 1.3rem; margin: 2.7rem 0 .7rem; }
+h3 { font-size: 1.08rem; margin: 1.9rem 0 .5rem; color: var(--dark-warm); }
 
 p { margin: .9rem 0; }
 ul, ol { padding-left: 1.4rem; }
 li { margin: .3rem 0; }
+ul li::marker { color: var(--brand); }
+ol li::marker { color: var(--brand); font-weight: 500; }
 
-a {
-  color: var(--accent);
-  text-decoration: none;
-  border-bottom: 1px solid var(--accent-border);
-}
-a:hover { border-bottom-color: var(--accent); }
+a { color: var(--brand); text-decoration: none; border-bottom: 1px solid #c9d6e6; }
+a:hover { border-bottom-color: var(--brand); }
 
-strong { font-weight: 640; }
+strong, b { font-weight: 500; }
 
-code, pre, kbd {
-  font-family: "SF Mono", ui-monospace, Menlo, Monaco, "Cascadia Code", monospace;
-}
+/* —— 代码：象牙底 + 圆角，不加边框 —— */
+code, pre, kbd { font-family: var(--mono); }
 code {
-  font-size: .88em;
-  background: var(--code-bg);
-  padding: .12em .35em;
-  border-radius: 4px;
+  font-size: .86em;
+  background: var(--inline-code);
+  border-radius: 3px;
+  padding: .1em .34em;
+  color: var(--dark-warm);
 }
 pre {
-  background: var(--code-bg);
-  color: var(--code-ink);
-  padding: 1rem 1.1rem;
-  border-radius: 8px;
-  border-left: 3px solid var(--accent);
+  background: var(--ivory);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+  margin: 1.1rem 0;
   overflow-x: auto;
-  font-size: .86rem;
-  line-height: 1.6;
+  font-size: .84rem;
+  line-height: 1.55;
+  color: var(--near-black);
+  break-inside: avoid;
 }
-pre code { background: none; padding: 0; font-size: inherit; }
+pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
 kbd {
-  font-size: .82em;
-  border: 1px solid var(--rule);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  padding: .05em .35em;
-  background: #fff;
+  font-size: .8em;
+  background: var(--warm-sand);
+  border-radius: 3px;
+  padding: .06em .36em;
+  color: var(--dark-warm);
 }
 
-/* 标题区元信息 */
-.lesson-meta { color: var(--muted); font-size: .92rem; margin: 0 0 1.8rem; }
-.lede { font-size: 1.15rem; color: var(--ink-soft); }
+/* —— 头部：标题 + 元信息，底部一条全宽细线收口（结构性分隔，非装饰）—— */
+.lesson-meta {
+  color: var(--stone);
+  font-size: .9rem;
+  margin: 0 0 .2rem;
+  padding-bottom: .9rem;
+  border-bottom: 0.5pt solid var(--border);
+  letter-spacing: .2pt;
+}
+.lede { font-size: 1.12rem; line-height: 1.6; color: var(--dark-warm); margin-top: 1.5rem; }
 
-/* 提示框 */
+/* —— 强调段落：象牙底 + 圆角，无边框、无强调边（kami 减法规则）——
+   .win / .warn / .task 的语义由内部纯文字标签承担，不再加色块或色边。 */
 .callout, .win, .warn, .task {
-  border-radius: 8px;
-  padding: .9rem 1.1rem;
+  background: var(--ivory);
+  border-radius: var(--radius);
+  padding: .95rem 1.15rem;
   margin: 1.3rem 0;
-  border: 1px solid var(--rule);
-  background: #fff;
+  break-inside: avoid;
 }
-.callout { background: var(--accent-soft); border-color: var(--accent-border); }
-.win     { background: var(--green-soft);  border-color: var(--green-border); }
-.warn    { background: var(--amber-soft);  border-color: var(--amber-border); }
-.task    { border-left: 4px solid var(--accent); }
 .callout > :first-child, .win > :first-child,
 .warn > :first-child, .task > :first-child { margin-top: 0; }
 .callout > :last-child, .win > :last-child,
 .warn > :last-child, .task > :last-child { margin-bottom: 0; }
 
+/* 标签：已填充的象牙块内，用「纯文字墨蓝」标签，不再叠加色块 */
 .tag {
   display: inline-block;
+  font-family: var(--sans);
   font-size: .72rem;
-  letter-spacing: .05em;
+  font-weight: 500;
+  letter-spacing: .5pt;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--brand);
+  margin-bottom: .3rem;
 }
-.win .tag   { color: var(--green); }
-.warn .tag  { color: var(--amber); }
-.task .tag  { color: var(--accent); }
 
-/* 表格 */
+/* —— 表格：发丝分隔线（表头 0.6pt / 行 0.25pt，均用 --border）—— */
 table {
-  border-collapse: collapse;
   width: 100%;
+  border-collapse: collapse;
+  font-size: .92rem;
   margin: 1.2rem 0;
-  font-size: .93rem;
+  break-inside: avoid;
 }
-th, td {
-  text-align: left;
-  padding: .5rem .7rem;
-  border-bottom: 1px solid var(--rule);
-  vertical-align: top;
-}
-th { font-weight: 640; border-bottom-width: 2px; }
+th, td { text-align: left; padding: .5rem .7rem; vertical-align: top; }
+th { font-weight: 500; color: var(--dark-warm); border-bottom: 0.6pt solid var(--border); }
+td { border-bottom: 0.25pt solid var(--border); }
 
-/* 小测 */
+/* —— 小测：同「强调段落」—— */
 .quiz {
-  border: 1px solid var(--rule);
-  border-radius: 8px;
+  background: var(--ivory);
+  border-radius: var(--radius);
   padding: 1rem 1.2rem;
-  margin: 1.4rem 0;
-  background: #fff;
+  margin: 1.3rem 0;
+  break-inside: avoid;
 }
-.quiz .q { font-weight: 640; margin-top: 0; }
+.quiz .q { font-weight: 500; margin-top: 0; }
 details { margin-top: .6rem; }
-details summary { cursor: pointer; color: var(--accent); font-size: .92rem; }
+details summary { cursor: pointer; color: var(--brand); font-size: .92rem; }
 details[open] summary { margin-bottom: .4rem; }
 details p { margin: .5rem 0; }
 
-/* 参考文档的紧凑列表 */
+/* —— 参考列表 —— */
 .ref-list { font-size: .95rem; }
 
-/* 页脚导航 */
+/* —— 页脚导航：一条全宽细线把导航与正文分开（结构性）—— */
 .lesson-nav {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
-  margin-top: 3.5rem;
-  padding-top: 1.2rem;
-  border-top: 1px solid var(--rule);
-  font-size: .95rem;
+  margin-top: 3.2rem;
+  padding-top: 1.1rem;
+  border-top: 0.5pt solid var(--border);
+  font-size: .92rem;
 }
 .lesson-nav a { border: none; }
 .lesson-nav .next { margin-left: auto; text-align: right; }
 
-.footer-note { color: var(--muted); font-size: .88rem; margin-top: 2.5rem; }
+.footer-note { color: var(--stone); font-size: .86rem; margin-top: 2.4rem; }
+
+/* —— Prism 代码高亮：收敛到 kami 的暖色 / 墨蓝基调 —— */
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata { color: var(--stone); }
+
+.token.punctuation { color: var(--stone); }
+
+.token.keyword,
+.token.rule,
+.token.atrule,
+.token.directive { color: var(--brand); font-weight: 500; }
+
+.token.string,
+.token.char,
+.token.attr-value,
+.token.inserted { color: #3f6b52; }
+
+.token.number,
+.token.boolean,
+.token.constant,
+.token.symbol,
+.token.builtin,
+.token.attr-name { color: #8a5a2b; }
+
+.token.function,
+.token.class-name,
+.token.macro-name,
+.token.namespace,
+.token.property { color: var(--ink-light); }
+
+.token.operator,
+.token.entity,
+.token.url { color: var(--dark-warm); }
+
+.token.lifetime { color: #6a4b8a; }
+
+.token.deleted { color: #8a3a2c; }
+
+.token.important,
+.token.bold { font-weight: 500; }
+.token.italic { font-style: normal; }
 
 @media print {
-  :root { --paper: #fff; }
-  body { max-width: none; padding: 0; font-size: 11pt; }
+  :root { --parchment: #fff; --ivory: #fff; --inline-code: #f4f4f4; }
+  body { max-width: none; padding: 0; font-size: 11pt; letter-spacing: 0; }
   pre, .callout, .win, .warn, .task, .quiz, table { break-inside: avoid; }
   a { color: inherit; border: none; }
   .lesson-nav { display: none; }

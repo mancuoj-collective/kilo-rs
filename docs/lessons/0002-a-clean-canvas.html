@@ -55,7 +55,7 @@
 我们在这里<strong>先把终端恢复原状</strong>，再把信息交回给原来的 hook（<code>color-eyre</code> 设置的那个）
 去打印报告。这样报告就会打在正常屏幕上、用正常的换行输出。</p>
 
-<pre><code>fn install_panic_hook() {
+<pre><code class="language-rust">fn install_panic_hook() {
     let hook = std::panic::take_hook();      // the current hook (color-eyre's)
     std::panic::set_hook(Box::new(move |info| {
         restore();                            // restore the terminal first
@@ -103,7 +103,7 @@
 <div class="task">
 <p><span class="tag">任务</span> 把 <code>src/main.rs</code> 改成下面的样子</p>
 <p>先通读一遍，理解每一块在做什么，再亲手敲进去：</p>
-<pre><code>use std::io::{self, Write};
+<pre><code class="language-rust">use std::io::{self, Write};
 
 use color_eyre::Result;
 use crossterm::{
@@ -245,7 +245,7 @@ fn welcome_line(cols: u16) -&gt; String {
 
 <div class="task">
 <p><span class="tag">运行并观察</span></p>
-<pre><code>cargo run</code></pre>
+<pre><code class="language-bash">cargo run</code></pre>
 <ol>
 <li>整屏被接管：空行是 <code>~</code>，约 1/3 处有欢迎语。</li>
 <li><strong>拖动窗口边缘改变大小</strong>：画面会自动重画、铺满新尺寸。</li>
@@ -334,8 +334,6 @@ fn welcome_line(cols: u16) -&gt; String {
   <a href="../reference/modern-rust-idioms.html">参考 · 现代 Rust 惯用法</a>。</li>
 </ul>
 
-<h2>我是你的老师，随时问</h2>
-
 <div class="callout">
 <p>为什么 <code>install_panic_hook</code> 里的闭包要 <code>move</code>、<code>Box::new</code> 又起什么作用、
 <code>chars().take()</code> 和字节切片到底差在哪……任何卡住的地方直接问。下一个洞就是真正的编辑器了：
@@ -349,5 +347,6 @@ fn welcome_line(cols: u16) -&gt; String {
 
 <p class="footer-note">kilo-rs 课程 · Lesson 0002。总目录见 <a href="../index.html">课程目录</a>。</p>
 
+<script src="../assets/prism.min.js" defer></script>
 </body>
 </html>

@@ -31,7 +31,7 @@
 <p><code>std::env::args()</code> 返回一个迭代器，第 0 项是程序名，第 1 项就是你传的文件名。
 用 <code>.nth(1)</code> 拿到它（<code>Option&lt;String&gt;</code>）：</p>
 
-<pre><code>let path = std::env::args().nth(1);   // Some("README.md") or None</code></pre>
+<pre><code class="language-rust">let path = std::env::args().nth(1);   // Some("README.md") or None</code></pre>
 
 <div class="callout">
 <p><span class="tag">注意</span> 用 <code>cargo run</code> 传参必须加 <code>--</code>：
@@ -65,7 +65,7 @@
 <div class="task">
 <p><span class="tag">任务</span> 把 <code>src/main.rs</code> 改成下面的样子</p>
 <p>前两课的部分没变，重点看 <code>main</code>、<code>draw</code>、<code>truncate</code>：</p>
-<pre><code>use std::{
+<pre><code class="language-rust">use std::{
     env,
     fs,
     io::{self, Write},
@@ -209,7 +209,7 @@ fn welcome_line(cols: u16) -&gt; String {
 
 <div class="task">
 <p><span class="tag">运行并观察</span></p>
-<pre><code>cargo run -- README.md
+<pre><code class="language-bash">cargo run -- README.md
 cargo run -- kilo.c
 cargo run
 cargo run -- 不存在的文件.txt</code></pre>
@@ -289,8 +289,6 @@ cargo run -- 不存在的文件.txt</code></pre>
   <a href="../reference/architecture.html">架构与文件结构</a>。</li>
 </ul>
 
-<h2>我是你的老师，随时问</h2>
-
 <div class="callout">
 <p><code>str::to_owned</code> 和 <code>String::from</code> 有什么区别、<code>.get</code> 和索引 <code>[i]</code> 怎么选、
 为什么 <code>?</code> 在这里能直接用……任何卡住的地方直接问。下一课：<strong>让光标动起来</strong>——
@@ -304,5 +302,6 @@ cargo run -- 不存在的文件.txt</code></pre>
 
 <p class="footer-note">kilo-rs 课程 · Lesson 0003。总目录见 <a href="../index.html">课程目录</a>。</p>
 
+<script src="../assets/prism.min.js" defer></script>
 </body>
 </html>

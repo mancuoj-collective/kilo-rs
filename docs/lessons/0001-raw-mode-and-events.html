@@ -91,7 +91,7 @@ Rust 里没有 <code>try/finally</code>，取而代之、也更地道的做法�
 <div class="task">
 <p><span class="tag">任务 1</span> 读懂 Cargo.toml 的约定</p>
 <p>我已经把 <code>Cargo.toml</code> 更新成现代项目的样式，读一遍，理解每一块在干什么：</p>
-<pre><code>[package]
+<pre><code class="language-toml">[package]
 name = "kilo"
 version = "0.1.0"
 edition = "2024"          # 最新 edition
@@ -108,13 +108,13 @@ unsafe_code = "forbid"    # 这个项目一行 unsafe 都不需要
 all = { level = "warn", priority = 10 }
 pedantic = { level = "warn", priority = 3 }</code></pre>
 <p><code>[lints]</code> 让 clippy 的严格检查成为项目级约定。以后每次写完都跑：</p>
-<pre><code>cargo clippy --all-targets -- -D warnings</code></pre>
+<pre><code class="language-bash">cargo clippy --all-targets -- -D warnings</code></pre>
 </div>
 
 <div class="task">
 <p><span class="tag">任务 2</span> 写下事件循环</p>
 <p>把 <code>src/main.rs</code> 清空，<strong>亲手敲一遍</strong>下面的代码（别复制——肌肉记忆也是学习的一部分）：</p>
-<pre><code>use std::io::{self, Write};
+<pre><code class="language-rust">use std::io::{self, Write};
 
 use color_eyre::Result;
 use crossterm::{
@@ -200,7 +200,7 @@ fn main() -&gt; Result&lt;()&gt; {
 
 <div class="task">
 <p><span class="tag">任务 3</span> 运行并观察</p>
-<pre><code>cargo run</code></pre>
+<pre><code class="language-bash">cargo run</code></pre>
 <p>然后依次做这几件事：</p>
 <ol>
 <li>随便敲几个字符，比如 <code>a</code>、方向键 <kbd>↑</kbd>、<kbd>Ctrl</kbd>+<kbd>S</kbd>。
@@ -297,11 +297,9 @@ shell 可以正常用。这就是 RAII 的威力：你并没有写任何「出�
   <a href="../reference/modern-rust-idioms.html">参考 · 现代 Rust 惯用法</a>。</li>
 </ul>
 
-<h2>我是你的老师，随时问</h2>
-
 <div class="callout">
 <p>编译器报错看不懂、<code>let … else</code> 和 <code>match</code> 怎么选、为什么 <code>main</code> 能返回
-<code>Result</code>、<code>Drop</code> 到底什么时候被调用……任何卡住的地方，直接把报错或疑问贴给我。
+<code>Result</code>、<code>Drop</code> 到底什么时候被调用……遇到任何卡住的地方，直接提问即可。
 课程设计成「每课一个小胜利」，慢了、跳了、想加料，都由你说了算。</p>
 </div>
 
@@ -312,5 +310,6 @@ shell 可以正常用。这就是 RAII 的威力：你并没有写任何「出�
 
 <p class="footer-note">kilo-rs 课程 · Lesson 0001。总目录见 <a href="../index.html">课程目录</a>。</p>
 
+<script src="../assets/prism.min.js" defer></script>
 </body>
 </html>

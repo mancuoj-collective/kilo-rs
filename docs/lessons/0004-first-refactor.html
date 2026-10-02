@@ -58,7 +58,7 @@
 <div class="task">
 <p><span class="tag">任务 1</span> 新建 <code>src/tui.rs</code></p>
 <p>把 <code>Terminal</code>、<code>restore</code>、<code>install_panic_hook</code> 原样搬到这里：</p>
-<pre><code>//! Terminal lifecycle management.
+<pre><code class="language-rust">//! Terminal lifecycle management.
 //!
 //! Wraps the must-be-paired operations (raw mode, alternate screen, cursor) in a
 //! [`Terminal`] guard, and restores the terminal on panic via [`install_panic_hook`].
@@ -127,7 +127,7 @@ fn restore() {
 <p><span class="tag">任务 2</span> 新建 <code>src/lib.rs</code></p>
 <p>把 <code>main</code> 里的<strong>逻辑</strong>（读文件、事件循环、渲染）搬过来，改名为 <code>run</code>，
 并声明 <code>tui</code> 模块：</p>
-<pre><code>//! kilo-rs: a text editor rewritten from kilo in Rust.
+<pre><code class="language-rust">//! kilo-rs: a text editor rewritten from kilo in Rust.
 //!
 //! Logic lives in the library (so integration tests can reach it); `main.rs` is a thin
 //! shell. Only the terminal lifecycle is split into [`tui`] so far; as it grows, `run`
@@ -226,7 +226,7 @@ fn welcome_line(cols: u16) -&gt; String {
 <div class="task">
 <p><span class="tag">任务 3</span> 把 <code>src/main.rs</code> 削成薄外壳</p>
 <p>只留初始化和调用：</p>
-<pre><code>//! `kilo` binary entry point: setup + call into the library; no business logic.
+<pre><code class="language-rust">//! `kilo` binary entry point: setup + call into the library; no business logic.
 
 use color_eyre::Result;
 
@@ -240,7 +240,7 @@ fn main() -&gt; Result&lt;()&gt; {
 
 <div class="task">
 <p><span class="tag">任务 4</span> 验证「行为不变」</p>
-<pre><code>cargo run -- kilo.c
+<pre><code class="language-bash">cargo run -- kilo.c
 cargo clippy --all-targets -- -D warnings</code></pre>
 <p>应该和上一课<strong>完全一样</strong>：文件铺满、空行 <code>~</code>、Ctrl-Q 退出。
 如果哪里不一样，就是搬家搬错了，退回去重搬。</p>
@@ -340,8 +340,6 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 <li>本课程：<a href="../reference/architecture.html">参考 · 架构与文件结构</a>。</li>
 </ul>
 
-<h2>我是你的老师，随时问</h2>
-
 <div class="callout">
 <p><code>pub(crate)</code> 和 <code>pub</code> 怎么选、<code>mod</code> 和文件名的对应关系、
 为什么 <code>crate::</code>、<code>self::</code>、<code>super::</code> 有三种路径……任何卡住的地方直接问。
@@ -355,5 +353,6 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 
 <p class="footer-note">kilo-rs 课程 · Lesson 0004。总目录见 <a href="../index.html">课程目录</a>。</p>
 
+<script src="../assets/prism.min.js" defer></script>
 </body>
 </html>

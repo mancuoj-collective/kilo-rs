@@ -82,13 +82,13 @@
 <div class="task">
 <p><span class="tag">任务 1</span> 加依赖</p>
 <p>在 <code>Cargo.toml</code> 的 <code>[dependencies]</code> 里加一行（本地缓存里已有，可离线构建）：</p>
-<pre><code>unicode-width = "0.2"</code></pre>
+<pre><code class="language-toml">unicode-width = "0.2"</code></pre>
 <p>它提供 <code>UnicodeWidthChar::width(ch) -&gt; Option&lt;usize&gt;</code>：宽字符返回 2，普通字符 1，控制 / 组合字符返回 0 或 <code>None</code>。</p>
 </div>
 
 <div class="task">
 <p><span class="tag">任务 2</span> 新建 <code>src/row.rs</code></p>
-<pre><code>//! One line of text, and the conversion between char position and display column.
+<pre><code class="language-rust">//! One line of text, and the conversion between char position and display column.
 //!
 //! The key fact: **a char does not always occupy one column**.
 //! - a tab `\t` occupies 1 to 8 columns (up to the next tab stop);
@@ -239,7 +239,7 @@ mod tests {
 <p><span class="tag">任务 3</span> 改写 <code>src/editor.rs</code></p>
 <p>把 <code>Vec&lt;String&gt;</code> 换成 <code>Vec&lt;Row&gt;</code>；<code>cursor()</code> 现在返回<strong>显示列</strong>；
 <code>scroll</code> 的横向也用 <code>rx</code>：</p>
-<pre><code>//! Editable editor state: cursor, viewport, and rendering by display column.
+<pre><code class="language-rust">//! Editable editor state: cursor, viewport, and rendering by display column.
 
 use crate::row::Row;
 
@@ -381,7 +381,7 @@ impl Editor {
     }
 }</code></pre>
 <p>（文件末尾的 <code>#[cfg(test)] mod tests</code> 保留原来的三个测试，另外加一个验证宽字符光标的新测试：）</p>
-<pre><code>    #[test]
+<pre><code class="language-rust">    #[test]
     fn cursor_reports_display_columns_for_wide_chars() {
         let mut e = Editor::new(&amp;[String::from("中文")]);
         e.move_cursor(Move::Right); // move past the 1st char
@@ -390,14 +390,14 @@ impl Editor {
         assert_eq!(e.cursor(), (4, 0)); // line end is at display column 4
     }</code></pre>
 <p>注意原来的 <code>scroll_keeps_cursor_visible</code> 测试要把构造改成切片形式：</p>
-<pre><code>    let lines: Vec&lt;String&gt; = (0..10).map(|i| format!("line {i}")).collect();
+<pre><code class="language-rust">    let lines: Vec&lt;String&gt; = (0..10).map(|i| format!("line {i}")).collect();
     let mut e = Editor::new(&amp;lines);</code></pre>
 </div>
 
 <div class="task">
 <p><span class="tag">任务 4</span> 更新 <code>src/lib.rs</code> 的 <code>draw</code></p>
 <p>声明 <code>pub mod row;</code>，然后渲染改成「问 <code>Editor</code> 要一行按列取好的文本」：</p>
-<pre><code>pub mod editor;
+<pre><code class="language-rust">pub mod editor;
 pub mod row;
 pub mod tui;
 
@@ -444,7 +444,7 @@ fn draw(editor: &amp;mut Editor) -&gt; io::Result&lt;()&gt; {
 
 <div class="task">
 <p><span class="tag">任务 5</span> 运行 + 测试</p>
-<pre><code>printf '中文测试\nabc\n标签行\n' &gt; zh.txt
+<pre><code class="language-bash">printf '中文测试\nabc\n标签行\n' &gt; zh.txt
 cargo run -- zh.txt        # cursor crosses a CJK char in one step (2 columns)
 cargo run -- kilo.c        # a file with tabs: check tab expansion aligns
 cargo test                 # 8 unit tests, no terminal needed
@@ -554,8 +554,6 @@ abcdefg\tY    a b c d e f g Y        # Y 在第 8 列   ✅ 对齐
   <a href="../reference/modern-rust-idioms.html">现代 Rust 惯用法</a>。</li>
 </ul>
 
-<h2>我是你的老师，随时问</h2>
-
 <div class="callout">
 <p><code>fold</code> 和 <code>for</code> 怎么选、<code>render_window</code> 里那串边界条件怎么推、
 <code>unicode-width</code> 为什么是近似……任何卡住的地方直接问。下一课真正开始
@@ -570,5 +568,6 @@ abcdefg\tY    a b c d e f g Y        # Y 在第 8 列   ✅ 对齐
 
 <p class="footer-note">kilo-rs 课程 · Lesson 0006。总目录见 <a href="../index.html">课程目录</a>。</p>
 
+<script src="../assets/prism.min.js" defer></script>
 </body>
 </html>

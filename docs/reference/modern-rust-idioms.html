@@ -22,7 +22,7 @@
 rustfmt 的 <code>group_imports = "StdExternalCrate"</code> 能自动做，但目前要 nightly 才完全生效，
 所以先手工遵守。</p>
 
-<pre><code>use std::io::{self, Write};
+<pre><code class="language-rust">use std::io::{self, Write};
 
 use color_eyre::Result;
 use crossterm::terminal;
@@ -43,7 +43,7 @@ use crate::document::Document;</code></pre>
 </tbody>
 </table>
 
-<pre><code>// ❌ awkward
+<pre><code class="language-rust">// ❌ awkward
 if let Some(row) = self.row(idx) {
     process(row);
 } else {
@@ -73,7 +73,7 @@ process(row);</code></pre>
 加锁/解锁、开事务/提交或回滚），都用一个类型把清理放进 <code>Drop</code>。
 作用域一结束——正常、<code>?</code> 提前返回、panic 展开——清理都会执行。</p>
 
-<pre><code>struct RawModeGuard;
+<pre><code class="language-rust">struct RawModeGuard;
 
 impl RawModeGuard {
     fn enter() -> io::Result&lt;Self&gt; {
@@ -110,7 +110,7 @@ impl Drop for RawModeGuard {
 <li>需要给错误加语境时用 <code>.context("…")?</code>（color-eyre/anyhow 都支持）。</li>
 </ul>
 
-<pre><code>fn main() -&gt; color_eyre::Result&lt;()&gt; {
+<pre><code class="language-rust">fn main() -&gt; color_eyre::Result&lt;()&gt; {
     color_eyre::install()?;
     // ...
     Ok(())
@@ -181,7 +181,7 @@ impl Drop for RawModeGuard {
 
 <h2>7. 每次写完都跑</h2>
 
-<pre><code>cargo fmt
+<pre><code class="language-bash">cargo fmt
 cargo clippy --all-targets -- -D warnings</code></pre>
 
 <p>本项目 <code>Cargo.toml</code> 已经开启 <code>clippy::all</code> + <code>clippy::pedantic</code>，
@@ -202,5 +202,6 @@ cargo clippy --all-targets -- -D warnings</code></pre>
   <a class="next" href="crossterm-terminal-basics.html">参考 · 终端基础与 crossterm API →</a>
 </div>
 
+<script src="../assets/prism.min.js" defer></script>
 </body>
 </html>
