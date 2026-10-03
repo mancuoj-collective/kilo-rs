@@ -9,7 +9,13 @@
 <body>
 
 <h1>参考 · 终端基础与 crossterm API</h1>
-<p class="lesson-meta">kilo-rs 课程 · Reference 0001 · 配合 <a href="../lessons/0001-raw-mode-and-events.html">第 1 课</a> 使用</p>
+<p class="lesson-meta">kilo-rs 课程 · 参考文档 · 配合 <a href="../lessons/0001-raw-mode-and-events.html">第 1 课</a> 使用</p>
+
+<nav class="top-nav">
+  <a class="prev" href="../lessons/0001-raw-mode-and-events.html">← 上一页</a>
+  <a class="home" href="../index.html">目录</a>
+  <a class="next" href="modern-rust-idioms.html">下一页 →</a>
+</nav>
 
 <p class="lede">压缩后的速查表，不是教程。课程走到哪，这里补到哪。写法一律采用本课程的
 <a href="modern-rust-idioms.html">现代惯用法</a>。</p>
@@ -79,7 +85,7 @@ loop {
     }
 }</code></pre>
 
-<p class="ref-list"><code>event::read()</code> 阻塞直到有事件发生；非阻塞轮询用
+<p><code>event::read()</code> 阻塞直到有事件发生；非阻塞轮询用
 <code>event::poll(Duration)</code>。二者不能在多线程里混用，也不能和 <code>EventStream</code> 混用。</p>
 
 <h2>四、按键的两种信息</h2>
@@ -169,5 +175,6 @@ fn main() -&gt; Result&lt;()&gt; {
 </div>
 
 <script src="../assets/prism.min.js" defer></script>
+<script src="../assets/docs.js" defer></script>
 </body>
 </html>

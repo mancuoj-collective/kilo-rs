@@ -11,6 +11,12 @@
 <h1>第 11 课 · 语法高亮</h1>
 <p class="lesson-meta">kilo-rs 课程 · Lesson 0011 · 预计 60–75 分钟 · 新模块：<code>syntax.rs</code>（规则表 + 状态机）</p>
 
+<nav class="top-nav">
+  <a class="prev" href="0010-find.html">← 上一课</a>
+  <a class="home" href="../index.html">目录</a>
+  <a class="next" href="0012-wrap-up.html">下一课 →</a>
+</nav>
+
 <p class="lede">到目前为止，正文只有一种颜色（命中时才高亮）。这一课给 <strong>C 与 Rust 文件</strong>上色：
 注释、字符串、数字、关键字各归其位。做法是经典的两件事——一张<strong>规则表</strong>（数据）
 加一个小<strong>词法分析器</strong>（行为）。难点是 <code>/* … */</code> 会<strong>跨行</strong>，
@@ -27,7 +33,18 @@
 </ul>
 </div>
 
-<h2>思路：数据 + 行为 + 分层</h2>
+<nav class="toc">
+  <p class="tag">本课内容</p>
+  <ol>
+    <li><a href="#sec-1">思路：数据 + 行为 + 分层</a></li>
+    <li><a href="#sec-2">动手</a></li>
+    <li><a href="#sec-3">逐段拆解</a></li>
+    <li><a href="#sec-4">小测</a></li>
+    <li><a href="#sec-5">主要资料</a></li>
+  </ol>
+</nav>
+
+<h2 id="sec-1">思路：数据 + 行为 + 分层</h2>
 
 <table>
 <thead><tr><th>关注点</th><th>归属</th></tr></thead>
@@ -41,7 +58,7 @@
 <p><code>syntax.rs</code> 里<strong>不出现任何终端颜色</strong>：它只产出「类别」，
 由 <code>ui</code> 把类别映射成颜色。这样词法可以单独写测试，换主题也不必动规则。</p>
 
-<h2>动手</h2>
+<h2 id="sec-2">动手</h2>
 
 <div class="task">
 <p><span class="tag">任务 1</span> 新建 <code>src/syntax.rs</code></p>
@@ -130,8 +147,12 @@ static HLDB: &amp;[Syntax] = &amp;[
                 None =&gt; path.contains(pattern),
             })
     }</code></pre>
-<p>核心：一个字符一个字符地扫，维护 <code>prev_sep</code>（上一个是不是分隔符）、
-<code>in_string</code> 与 <code>in_comment</code> 两个状态，返回「类别数组 + 本行是否还在注释里」。
+</div>
+
+<div class="task">
+<p><span class="tag">任务 2</span> 给 <code>syntax.rs</code> 加词法分析器与测试</p>
+<p>核心：一个字符一个字符地扫，维护三个状态——<code>prev_sep</code>（上一个是不是分隔符）、
+<code>in_string</code>、<code>in_comment</code>；返回「类别数组 + 本行是否还在注释里」。
 这是 <code>editorUpdateSyntax</code> 的直译：</p>
 <pre><code class="language-rust">    /// Categorises `chars`, returning the categories (aligned with `chars`) and whether
     /// the row ends inside a multi-line comment — i.e. whether the next row starts in one.
@@ -311,7 +332,7 @@ fn is_separator(c: char) -&gt; bool {
 </div>
 
 <div class="task">
-<p><span class="tag">任务 2</span> 改 <code>src/row.rs</code>：让每行携带高亮</p>
+<p><span class="tag">任务 3</span> 改 <code>src/row.rs</code>：让每行携带高亮</p>
 <p>给 <code>Segment</code> 加一个 <code>highlight</code> 字段；给 <code>Row</code> 加两个字段
 （每字符的类别 + 是否终止于多行注释）：</p>
 <pre><code class="language-rust">use crate::syntax::Highlight;
@@ -429,7 +450,7 @@ fn push_segment(segments: &amp;mut Vec&lt;Segment&gt;, text: &amp;str, highlight
 </div>
 
 <div class="task">
-<p><span class="tag">任务 3</span> 改 <code>src/document.rs</code>：持有语法并维护高亮</p>
+<p><span class="tag">任务 4</span> 改 <code>src/document.rs</code>：持有语法并维护高亮</p>
 <p>域模型多一个 <code>syntax</code> 字段（引用静态表），并暴露 <code>filetype</code> 给状态栏：</p>
 <pre><code class="language-rust">use crate::{row::Row, syntax::Syntax};
 
@@ -520,7 +541,7 @@ pub struct Document {
 </div>
 
 <div class="task">
-<p><span class="tag">任务 4</span> 改 <code>src/ui.rs</code>：类别 → 颜色</p>
+<p><span class="tag">任务 5</span> 改 <code>src/ui.rs</code>：类别 → 颜色</p>
 <p>逐段打印时按类别上色；命中则用<strong>琥珀底 + 黑字</strong>标出。颜色映射放在 <code>ui</code>
 （渲染唯一负责样式的地方）；别忘把 <code>SetBackgroundColor</code> 加进 <code>crossterm::style</code> 的导入。</p>
 <pre><code class="language-rust">/// Writes one rendered segment with its syntax color, or the search-match style.
@@ -572,7 +593,7 @@ fn highlight_color(highlight: Highlight) -&gt; Option&lt;Color&gt; {
 </div>
 
 <div class="task">
-<p><span class="tag">任务 5</span> 改 <code>src/lib.rs</code>：注册模块</p>
+<p><span class="tag">任务 6</span> 改 <code>src/lib.rs</code>：注册模块</p>
 <pre><code class="language-rust">pub mod document;
 pub mod editor;
 pub mod row;
@@ -582,7 +603,7 @@ pub mod ui;</code></pre>
 </div>
 
 <div class="task">
-<p><span class="tag">任务 6</span> 运行 + 测试 + clippy</p>
+<p><span class="tag">任务 7</span> 运行 + 测试 + clippy</p>
 <pre><code class="language-bash">cargo run -- sample.c   # 看注释 / 字符串 / 数字 / 关键字各就各位
 cargo test              # 29 个单元测试
 cargo clippy --all-targets -- -D warnings
@@ -590,7 +611,7 @@ cargo fmt</code></pre>
 <p>试一个跨行注释：写 <code>/*</code> 后回车继续打字，整段（含空行）都应是注释色。</p>
 </div>
 
-<h2>逐段拆解</h2>
+<h2 id="sec-3">逐段拆解</h2>
 
 <ul>
 <li><strong>规则与词法分离</strong>：<code>Syntax</code> 是纯数据；加一门语言只加一条 <code>HLDB</code> 表项，
@@ -609,7 +630,7 @@ cargo fmt</code></pre>
   <code>Cyan</code> / <code>Magenta</code> / <code>Blue</code> / <code>Green</code> / <code>Red</code> 等终端命名色，跟随主题；比 kilo 的暗色 31–36 槽位清楚。</li>
 </ul>
 
-<h2>小测</h2>
+<h2 id="sec-4">小测</h2>
 
 <div class="quiz">
 <p class="q">1. 把「规则」做成数据表、把「词法」写成函数，最大的好处是？</p>
@@ -656,7 +677,7 @@ cargo fmt</code></pre>
 </details>
 </div>
 
-<h2>主要资料</h2>
+<h2 id="sec-5">主要资料</h2>
 <ul class="ref-list">
 <li>对应章节：<a href="https://viewsourcecode.org/snaptoken/kilo/07.syntaxHighlighting.html">snaptoken 第 7 章</a>
   （<code>editorUpdateSyntax</code> / <code>HLDB</code> / <code>editorSyntaxToColor</code>）。</li>
@@ -674,11 +695,12 @@ cargo fmt</code></pre>
 
 <div class="lesson-nav">
   <a class="prev" href="0010-find.html">← 第 10 课 · 查找</a>
-  <a class="next" href="../index.html">课程目录 →</a>
+  <a class="next" href="0012-wrap-up.html">第 12 课 · 收尾修订 →</a>
 </div>
 
 <p class="footer-note">kilo-rs 课程 · Lesson 0011。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 <script src="../assets/prism.min.js" defer></script>
+<script src="../assets/docs.js" defer></script>
 </body>
 </html>

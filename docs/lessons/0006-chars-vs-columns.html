@@ -11,6 +11,12 @@
 <h1>第 6 课 · 字符 ≠ 列（tab 与宽字符）</h1>
 <p class="lesson-meta">kilo-rs 课程 · Lesson 0006 · 预计 40–50 分钟 · 修一个真 bug + 引入 Row</p>
 
+<nav class="top-nav">
+  <a class="prev" href="0005-cursor-and-scrolling.html">← 上一课</a>
+  <a class="home" href="../index.html">目录</a>
+  <a class="next" href="0007-editing-and-saving.html">下一课 →</a>
+</nav>
+
 <p class="lede">你在第 5 课末尾发现：光标经过中文时「要按两下才走一个字」。这是个真 bug，根因是
 <strong>「1 个字符」不等于「1 列」</strong>。这一课引入 <code>Row</code>，把
 <strong>逻辑字符位置 <code>cx</code></strong> 和 <strong>显示列 <code>rx</code></strong> 彻底分开，
@@ -26,7 +32,19 @@
 </ul>
 </div>
 
-<h2>为什么 char ≠ column</h2>
+<nav class="toc">
+  <p class="tag">本课内容</p>
+  <ol>
+    <li><a href="#sec-1">为什么 char ≠ column</a></li>
+    <li><a href="#sec-2">cx 与 rx：两套坐标</a></li>
+    <li><a href="#sec-3">动手</a></li>
+    <li><a href="#sec-4">逐段拆解</a></li>
+    <li><a href="#sec-5">小测</a></li>
+    <li><a href="#sec-6">主要资料</a></li>
+  </ol>
+</nav>
+
+<h2 id="sec-1">为什么 char ≠ column</h2>
 
 <p>用「第几个字符」来标记光标很自然，但屏幕是按「第几列」来画的。这两者只在「所有字符都占 1 列」时才相等。
 真实情况里有三种反例：</p>
@@ -46,7 +64,7 @@
 「宽字符也占 N 列」一并交给同一套机制。</p>
 </div>
 
-<h2>cx 与 rx：两套坐标</h2>
+<h2 id="sec-2">cx 与 rx：两套坐标</h2>
 
 <table>
 <thead><tr><th>记号</th><th>含义</th><th>用途</th></tr></thead>
@@ -56,7 +74,7 @@
 </tbody>
 </table>
 
-<p>换算由 <code>Row</code> 负责：<code>cx_to_rx(cx)</code> 把字符序号转成起始列，
+<p>换算由 <code>Row</code> 负责：<code>cx_to_rx(cx)</code> 把字符下标转成起始列，
 <code>rx_to_cx(rx)</code> 反过来。<strong>光标位置、横向滚动都改用 <code>rx</code>；移动和编辑仍用 <code>cx</code>。</strong></p>
 
 <div class="callout">
@@ -72,12 +90,12 @@
 </table>
 <p>本课程里 <code>cx</code> 数的是<strong>第二种</strong>（Rust 的 <code>char</code>，一个汉字 = 1），
 <code>rx</code> 数的是<strong>第四种</strong>（显示列，一个汉字 = 2）。所以「两下才走一个中文」
-说的不是字符，而是在拿「按键次数」和「显示列」做比较。</p>
-<p><strong>已知局限</strong>：按码点计数，<code>e</code> + 组合音会被算成 2 个字符，需要按两次退格才能删掉视觉上的一个
+并不是说一个中文由两个字符组成，而是「按键次数」（按码点算）和「显示列」对不上。</p>
+<p><strong>已知局限</strong>：按码点计数，<code>e</code> + 组合字符会被当成 2 个字符，需要按两次退格才能删掉视觉上的一个
 <code>é</code>；emoji 家族同理。「按字素簇编辑」留到以后的一课。</p>
 </div>
 
-<h2>动手</h2>
+<h2 id="sec-3">动手</h2>
 
 <div class="task">
 <p><span class="tag">任务 1</span> 加依赖</p>
@@ -451,7 +469,7 @@ cargo test                 # 8 unit tests, no terminal needed
 cargo clippy --all-targets -- -D warnings</code></pre>
 </div>
 
-<h2>逐段拆解</h2>
+<h2 id="sec-4">逐段拆解</h2>
 
 <ul>
 <li><code>advance(col, ch)</code> 是<strong>自由函数</strong>而不是方法：它不需要 <code>self</code>。
@@ -465,12 +483,14 @@ cargo clippy --all-targets -- -D warnings</code></pre>
   制表符的宽度<strong>依赖当前列</strong>（对齐到下一个 8 的倍数），所以必须边累加边算，不能预先算死。</li>
 <li><strong><code>fold</code> 就是带累加器的 <code>for</code></strong>：<code>iter.fold(初始值, |累加器, 元素| 新累加器)</code>。
   <code>self.chars.iter().fold(0, |col, &amp;ch| advance(col, ch))</code> 读作「从第 0 列开始，
-  把每个字符依次交给 <code>advance</code> 推进列」。<code>iter()</code> 产出的是 <code>&amp;char</code>，
+  把每个字符依次交给 <code>advance</code> 推进列」。</li>
+<li><strong>关于 <code>&amp;ch</code> 这个模式</strong>：<code>iter()</code> 产出的是 <code>&amp;char</code>，
   模式 <code>&amp;ch</code> 把它拆成 <code>ch: char</code>（<code>char</code> 是 <code>Copy</code>，拆引用即复制），
-  等价于 <code>|col, ch| advance(col, *ch)</code>。等价的手写循环写法：<code>let mut col = 0; for &amp;ch in &amp;self.chars { col = advance(col, ch); }</code>。</li>
+  等价于 <code>|col, ch| advance(col, *ch)</code>。等价的手写循环：
+  <code>let mut col = 0; for &amp;ch in &amp;self.chars { col = advance(col, ch); }</code>。</li>
 <li><code>render_window</code> 一次做完三件事：<strong>tab 展开</strong>、<strong>按列截断</strong>、
   <strong>宽字符跨界用空格占位</strong>（半个字不画，免得字形被切一半）。它接收的是<strong>显示列</strong>窗口。</li>
-<li><code>Editor::cursor()</code> 现在返回 <code>(显示列, 行)</code>——<strong>不是</strong>字符序号。
+<li><code>Editor::cursor()</code> 现在返回 <code>(显示列, 行)</code>——<strong>不是</strong>字符下标。
   这是个语义变化，所以名字和文档都要说清。移动 / 编辑仍用字符 <code>cx</code>。</li>
 <li><code>Editor::new(&amp;[String])</code> 收<strong>切片</strong>而不是 <code>Vec&lt;String&gt;</code>：
   它只读不消费，收窄参数类型（Apollo §1.1）。这也是 <code>clippy::needless_pass_by_value</code> 逼出来的正确签名。</li>
@@ -495,13 +515,13 @@ abcdefg\tY    a b c d e f g Y        # Y 在第 8 列   对齐
 高亮也要按行来。<code>Row</code> 是它们共同的前置。所以这次是「顺手把地基打对」，不是绕路。</p>
 </div>
 
-<h2>小测</h2>
+<h2 id="sec-5">小测</h2>
 
 <div class="quiz">
 <p class="q">1. 光标位置和横向滚动该用下面哪个量？</p>
 <ul>
 <li>显示列 <code>rx</code></li>
-<li>字符序号 <code>cx</code></li>
+<li>字符下标 <code>cx</code></li>
 <li>行号 <code>cy</code></li>
 <li>字节偏移</li>
 </ul>
@@ -542,7 +562,7 @@ abcdefg\tY    a b c d e f g Y        # Y 在第 8 列   对齐
 </details>
 </div>
 
-<h2>主要资料</h2>
+<h2 id="sec-6">主要资料</h2>
 <ul class="ref-list">
 <li><a href="https://docs.rs/unicode-width/latest/unicode_width/">unicode-width 文档</a>
   —— <code>UnicodeWidthChar</code> / <code>UnicodeWidthStr</code>。</li>
@@ -569,5 +589,6 @@ abcdefg\tY    a b c d e f g Y        # Y 在第 8 列   对齐
 <p class="footer-note">kilo-rs 课程 · Lesson 0006。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 <script src="../assets/prism.min.js" defer></script>
+<script src="../assets/docs.js" defer></script>
 </body>
 </html>

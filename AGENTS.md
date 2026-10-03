@@ -21,6 +21,10 @@
   新页面只写正文结构。中文字体为 **仓耳今楷02**（个人使用免费），已按当前用字子集为 woff2 放在
   `docs/assets/fonts/`；**新增汉字后需重新子集化**，否则新字会回退到系统字体（用 `fonttools` +
   `brotli` 从 kami 的完整 TTF `cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/` 重新生成即可）。
+- **站点结构**：每张页面顶部有 `.top-nav`（`← 上一页 · 目录 · 下一页 →`，sticky）；每课正文前有 `.toc`
+  （「本课内容」小目录，链接到带 `sec-N` id 的 `<h2>`；宽屏时固定到右侧并滚动高亮当前节）。
+  本地 `docs/assets/docs.js` 负责：给 `<h2>` 注入 `#` 锚点、给代码块加「复制」按钮、TOC 的 scroll-spy。
+  新增页面照这套结构写（记得引 `prism.min.js` 与 `docs.js`）。
 - **重构即搬家**：按接缝拆模块，不按行数；每一刀行为不变，不一边重构一边加功能。
 - **让学习者敲**：不代劳。
 
@@ -31,7 +35,7 @@
 
 ## 进度 → 下一步
 
-已完成第 1–11 课。`src/` = 课程实现 + 收尾修订（见 `docs/reference/wrap-up.html`）。
+已完成第 1–12 课。`src/` = 课程实现 + 第 12 课的收尾修订（见 `docs/lessons/0012-wrap-up.html`）。
 
 ## 与原版 kilo（`kilo.c`）的差距
 

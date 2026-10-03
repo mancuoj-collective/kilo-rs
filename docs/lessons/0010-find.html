@@ -11,6 +11,12 @@
 <h1>第 10 课 · 查找</h1>
 <p class="lesson-meta">kilo-rs 课程 · Lesson 0010 · 预计 50–60 分钟 · 加功能：实时查找与命中高亮</p>
 
+<nav class="top-nav">
+  <a class="prev" href="0009-status-and-message-bar.html">← 上一课</a>
+  <a class="home" href="../index.html">目录</a>
+  <a class="next" href="0011-syntax-highlighting.html">下一课 →</a>
+</nav>
+
 <p class="lede">编辑器现在能打开、能编辑、能保存。但当一个文件有几百行，想找「那一处文字」时，
 你只能靠肉眼扫。<strong>查找</strong>是编辑器的高频动作：按 <kbd>Ctrl</kbd>+<kbd>F</kbd>，
 在消息栏输入关键字——<strong>边输边跳</strong>、命中处<strong>高亮</strong>；
@@ -26,10 +32,21 @@
 </ul>
 </div>
 
-<h2>思路：命中高亮从哪来？</h2>
+<nav class="toc">
+  <p class="tag">本课内容</p>
+  <ol>
+    <li><a href="#sec-1">思路：命中高亮从哪来？</a></li>
+    <li><a href="#sec-2">动手</a></li>
+    <li><a href="#sec-3">逐段拆解</a></li>
+    <li><a href="#sec-4">小测</a></li>
+    <li><a href="#sec-5">主要资料</a></li>
+  </ol>
+</nav>
+
+<h2 id="sec-1">思路：命中高亮从哪来？</h2>
 
 <p>在原版 kilo 里，查找不只是「移动光标」，还要把命中的那几个字符<strong>反色显示</strong>。
-这意味着渲染管线要能区分「普通文字」和「命中文字」。我们把这件事拆成两层：</p>
+所以渲染管线要能区分「普通文字」和「命中文字」。我们把这件事拆成两层：</p>
 
 <table>
 <thead><tr><th></th><th>谁知道「哪段命中」</th><th>谁知道「命中长什么样」</th></tr></thead>
@@ -40,10 +57,10 @@
 </table>
 
 <p>于是 <code>Row::render_window</code> 不再返回一个 <code>String</code>，而是返回一串
-<strong><code>Segment</code></strong>：文本 + 「是否命中」。谁也不想把终端的转义码写进 <code>Row</code>——
+<strong><code>Segment</code></strong>：文本 + 「是否命中」。不该把终端的转义码写进 <code>Row</code>——
 那是渲染层的语言。</p>
 
-<h2>动手</h2>
+<h2 id="sec-2">动手</h2>
 
 <div class="task">
 <p><span class="tag">任务 1</span> 改 <code>src/row.rs</code>：分段渲染 + 查找</p>
@@ -86,6 +103,10 @@ pub struct Row {
     pub fn set_match(&amp;mut self, range: Option&lt;Range&lt;usize&gt;&gt;) {
         self.match_range = range;
     }</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 2</span> 让 <code>render_window</code> 返回分段</p>
 <p>把 <code>render_window</code> 改成<strong>返回分段</strong>，并加一个小工具把相邻同类段并起来：</p>
 <pre><code class="language-rust">    /// Returns display columns `[coloff, coloff + width)`, split into highlighted and plain runs.
     #[must_use]
@@ -141,7 +162,7 @@ fn push_segment(segments: &amp;mut Vec&lt;Segment&gt;, text: &amp;str, matched: 
 </div>
 
 <div class="task">
-<p><span class="tag">任务 2</span> 改 <code>src/document.rs</code>：转发高亮</p>
+<p><span class="tag">任务 3</span> 改 <code>src/document.rs</code>：转发高亮</p>
 <p>顶部加 <code>use std::ops::Range;</code>，并在 <code>impl Document</code> 里加两个方法：</p>
 <pre><code class="language-rust">    /// Highlights `range` (char indices) as the current search match on `row`.
     pub fn set_match(&amp;mut self, row: usize, range: Range&lt;usize&gt;) {
@@ -159,7 +180,7 @@ fn push_segment(segments: &amp;mut Vec&lt;Segment&gt;, text: &amp;str, matched: 
 </div>
 
 <div class="task">
-<p><span class="tag">任务 3</span> 改 <code>src/editor.rs</code>：查找状态与逻辑</p>
+<p><span class="tag">任务 4</span> 改 <code>src/editor.rs</code>：查找状态与逻辑</p>
 <p>先加三个类型：一个「怎么走」的枚举、一个不透明的「视口快照」，以及新增字段。</p>
 <pre><code class="language-rust">/// How [`Editor::find`] should step through matches.
 #[derive(Clone, Copy)]
@@ -278,7 +299,7 @@ pub struct ViewState {
 </div>
 
 <div class="task">
-<p><span class="tag">任务 4</span> 改 <code>src/ui.rs</code>：逐段打印</p>
+<p><span class="tag">任务 5</span> 改 <code>src/ui.rs</code>：逐段打印</p>
 <p>把原来「打印整行」的那一句，换成分段循环——命中段标成琥珀底 + 黑字（记得把
 <code>SetBackgroundColor</code> / <code>SetForegroundColor</code> 加进 <code>crossterm::style</code> 的导入），
 打完立刻复位：</p>
@@ -301,7 +322,7 @@ pub struct ViewState {
 </div>
 
 <div class="task">
-<p><span class="tag">任务 5</span> 改 <code>src/lib.rs</code>：Ctrl-F 与「实时」提示</p>
+<p><span class="tag">任务 6</span> 改 <code>src/lib.rs</code>：Ctrl-F 与「实时」提示</p>
 <p>导入 <code>Find</code>，更新帮助文案，并加一个按键分支：</p>
 <pre><code class="language-rust">use crate::{
     editor::{Editor, Find, Move},
@@ -375,14 +396,14 @@ fn prompt_with(
 </div>
 
 <div class="task">
-<p><span class="tag">任务 6</span> 运行 + 测试 + clippy</p>
+<p><span class="tag">任务 7</span> 运行 + 测试 + clippy</p>
 <pre><code class="language-bash">cargo run -- t.txt      # 按 Ctrl-F，输入关键字，看光标与高亮跟着走
 cargo test              # 21 个单元测试
 cargo clippy --all-targets -- -D warnings
 cargo fmt</code></pre>
 </div>
 
-<h2>逐段拆解</h2>
+<h2 id="sec-3">逐段拆解</h2>
 
 <ul>
 <li><strong>为什么 <code>Row</code> 返回「分段」而不是一个字符串？</strong>
@@ -404,7 +425,7 @@ cargo fmt</code></pre>
   高亮也按字符区间记；显示列只在渲染那一刻换算（tab 展开、宽字符占两列）。</li>
 </ul>
 
-<h2>小测</h2>
+<h2 id="sec-4">小测</h2>
 
 <div class="quiz">
 <p class="q">1. <code>render_window</code> 为什么返回 <code>Vec&lt;Segment&gt;</code>，而不是一个带 ANSI 的字符串？</p>
@@ -451,7 +472,7 @@ cargo fmt</code></pre>
 </details>
 </div>
 
-<h2>主要资料</h2>
+<h2 id="sec-5">主要资料</h2>
 <ul class="ref-list">
 <li>对应章节：<a href="https://viewsourcecode.org/snaptoken/kilo/06.search.html">snaptoken 第 6 章</a>
   （<code>editorFind</code> / <code>editorFindCallback</code> / <code>HL_MATCH</code>）。</li>
@@ -474,5 +495,6 @@ cargo fmt</code></pre>
 <p class="footer-note">kilo-rs 课程 · Lesson 0010。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 <script src="../assets/prism.min.js" defer></script>
+<script src="../assets/docs.js" defer></script>
 </body>
 </html>

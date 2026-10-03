@@ -11,6 +11,12 @@
 <h1>第 9 课 · 状态栏与消息栏</h1>
 <p class="lesson-meta">kilo-rs 课程 · Lesson 0009 · 预计 40–50 分钟 · 加功能：反馈、提示、保护</p>
 
+<nav class="top-nav">
+  <a class="prev" href="0008-document-and-ui.html">← 上一课</a>
+  <a class="home" href="../index.html">目录</a>
+  <a class="next" href="0010-find.html">下一课 →</a>
+</nav>
+
 <p class="lede">到目前为止，编辑器几乎不给你任何反馈：存了没存、有没有改动、写没写成功，全靠猜。
 这一课补上<strong>两条底栏</strong>——常驻的<strong>状态栏</strong>和临时的<strong>消息栏</strong>，
 并用它们实现「另存为」提示与「未保存退出」保护。</p>
@@ -25,7 +31,18 @@
 </ul>
 </div>
 
-<h2>两块底栏，两种生命</h2>
+<nav class="toc">
+  <p class="tag">本课内容</p>
+  <ol>
+    <li><a href="#sec-1">两块底栏，两种生命</a></li>
+    <li><a href="#sec-2">动手</a></li>
+    <li><a href="#sec-3">逐段拆解</a></li>
+    <li><a href="#sec-4">小测</a></li>
+    <li><a href="#sec-5">主要资料</a></li>
+  </ol>
+</nav>
+
+<h2 id="sec-1">两块底栏，两种生命</h2>
 
 <table>
 <thead><tr><th></th><th>状态栏</th><th>消息栏</th></tr></thead>
@@ -40,7 +57,7 @@
 <p>消息的「5 秒」是把<strong>时间当作状态</strong>：记下消息出现的那一刻（<code>Instant</code>），
 渲染时判断「距现在是否超过 5 秒」。这也是原版 kilo 的做法。</p>
 
-<h2>动手</h2>
+<h2 id="sec-2">动手</h2>
 
 <div class="task">
 <p><span class="tag">任务 1</span> 改 <code>src/document.rs</code></p>
@@ -423,7 +440,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt</code></pre>
 </div>
 
-<h2>逐段拆解</h2>
+<h2 id="sec-3">逐段拆解</h2>
 
 <ul>
 <li><strong>状态栏用反显 + 整行清空</strong>：<code>SetAttribute(Attribute::Reverse)</code> 把这一行反色，
@@ -445,7 +462,7 @@ cargo fmt</code></pre>
   所以连按才会累积。<kbd>Ctrl</kbd>+<kbd>Q</kbd> 之后按任何别的键，计数清零（回到 3 次）。</li>
 </ul>
 
-<h2>小测</h2>
+<h2 id="sec-4">小测</h2>
 
 <div class="quiz">
 <p class="q">1. 消息为什么用 <code>Instant</code> + 时限，而不是「下一帧就清空」？</p>
@@ -458,7 +475,7 @@ cargo fmt</code></pre>
 <details>
 <summary>看答案</summary>
 <p>第一个。消息要在屏幕上停留一小段时间才看得清；用「设置时刻 + 时限」来判定，
-渲染时过期就不再显示。这也是原版 kilo 的做法。</p>
+渲染时过期就不再显示。原版 kilo 也是这样做的。</p>
 </details>
 </div>
 
@@ -492,7 +509,7 @@ cargo fmt</code></pre>
 </details>
 </div>
 
-<h2>主要资料</h2>
+<h2 id="sec-5">主要资料</h2>
 <ul class="ref-list">
 <li>对应章节：<a href="https://viewsourcecode.org/snaptoken/kilo/04.aTextViewer.html">snaptoken 第 4 章</a>
   （<code>editorDrawStatusBar</code> / <code>editorDrawMessageBar</code> / <code>editorPrompt</code>）。</li>
@@ -513,5 +530,6 @@ cargo fmt</code></pre>
 <p class="footer-note">kilo-rs 课程 · Lesson 0009。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 <script src="../assets/prism.min.js" defer></script>
+<script src="../assets/docs.js" defer></script>
 </body>
 </html>

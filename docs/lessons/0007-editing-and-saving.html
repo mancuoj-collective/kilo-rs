@@ -11,6 +11,12 @@
 <h1>第 7 课 · 编辑与保存</h1>
 <p class="lesson-meta">kilo-rs 课程 · Lesson 0007 · 预计 45–60 分钟 · 加功能，也是借用检查器的主战场</p>
 
+<nav class="top-nav">
+  <a class="prev" href="0006-chars-vs-columns.html">← 上一课</a>
+  <a class="home" href="../index.html">目录</a>
+  <a class="next" href="0008-document-and-ui.html">下一课 →</a>
+</nav>
+
 <p class="lede">文件能看了、光标能动了，但它还是<strong>只读</strong>的。这一课让它真正可写：
 插入字符、回车换行、退格删除，再按 <kbd>Ctrl</kbd>+<kbd>S</kbd> 写回磁盘。
 <code>Row</code> / <code>Editor</code> 会长出修改方法——也是<strong>借用检查器正式上强度</strong>的地方。</p>
@@ -25,7 +31,19 @@
 </ul>
 </div>
 
-<h2>编辑的本质：改「行」</h2>
+<nav class="toc">
+  <p class="tag">本课内容</p>
+  <ol>
+    <li><a href="#sec-1">编辑的本质：改「行」</a></li>
+    <li><a href="#sec-2">借用检查器的正面战场</a></li>
+    <li><a href="#sec-3">动手</a></li>
+    <li><a href="#sec-4">逐段拆解</a></li>
+    <li><a href="#sec-5">小测</a></li>
+    <li><a href="#sec-6">主要资料</a></li>
+  </ol>
+</nav>
+
+<h2 id="sec-1">编辑的本质：改「行」</h2>
 
 <p>光标告诉我们「改哪一行的第几个字符」，真正的修改发生在 <code>Row</code> 上。
 三件事支撑起全部编辑：</p>
@@ -42,7 +60,7 @@
 <p>回车：在光标处把当前行切成上下两行。退格在行首：把当前行接到上一行末尾。两者都只是在
 <code>Vec&lt;Row&gt;</code> 上增删元素。</p>
 
-<h2>借用检查器的正面战场</h2>
+<h2 id="sec-2">借用检查器的正面战场</h2>
 
 <p>写「把当前行接到上一行」时，你会撞上本课最典型的冲突：</p>
 
@@ -63,7 +81,7 @@ prev.append(cur);</code></pre>
 而不是急着 <code>clone()</code> 绕过（那是 <code>m15-anti-pattern</code> 里的头号反模式）。</p>
 </div>
 
-<h2>动手</h2>
+<h2 id="sec-3">动手</h2>
 
 <div class="task">
 <p><span class="tag">任务 1</span> 给 <code>src/row.rs</code> 加上编辑方法</p>
@@ -331,7 +349,7 @@ cargo test             # 12 个单元测试
 cargo clippy --all-targets -- -D warnings</code></pre>
 </div>
 
-<h2>逐段拆解</h2>
+<h2 id="sec-4">逐段拆解</h2>
 
 <ul>
 <li><strong><code>split_off</code> / <code>append</code> 为什么是方法而不是就地拼</strong>：它们表达的是「行的拆分与连接」这一个概念，
@@ -362,7 +380,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 还白白复制数据。本课两次冲突的解法都是<strong>重新安排所有权</strong>（切出去、取出来），而不是复制。</p>
 </div>
 
-<h2>小测</h2>
+<h2 id="sec-5">小测</h2>
 
 <div class="quiz">
 <p class="q">1. 连接两行时，为什么先把当前行 <code>remove</code> 出来？</p>
@@ -410,7 +428,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 </details>
 </div>
 
-<h2>主要资料</h2>
+<h2 id="sec-6">主要资料</h2>
 <ul class="ref-list">
 <li>对应章节：<a href="https://www.flenker.blog/hecto-chapter-5/">hecto 第 5 章 · A Text Editor</a>、
   <a href="https://viewsourcecode.org/snaptoken/kilo/04.aTextViewer.html">snaptoken 第 4 章</a>（编辑与保存）。</li>
@@ -435,5 +453,6 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 <p class="footer-note">kilo-rs 课程 · Lesson 0007。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 <script src="../assets/prism.min.js" defer></script>
+<script src="../assets/docs.js" defer></script>
 </body>
 </html>

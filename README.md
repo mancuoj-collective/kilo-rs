@@ -20,11 +20,11 @@
 | 9   | [状态栏与消息栏](docs/lessons/0009-status-and-message-bar.html) | 反馈、另存为、退出保护      |
 | 10  | [查找](docs/lessons/0010-find.html)                       | `Ctrl-F` 实时搜索、命中高亮     |
 | 11  | [语法高亮](docs/lessons/0011-syntax-highlighting.html)     | 规则表 + 状态机、`syntax.rs`    |
+| 12  | [收尾修订](docs/lessons/0012-wrap-up.html)                 | 对照原版补的收尾修补            |
 
 参考文档：[现代 Rust 惯用法](docs/reference/modern-rust-idioms.html) ·
 [架构与文件结构](docs/reference/architecture.html) ·
-[终端基础与 crossterm API](docs/reference/crossterm-terminal-basics.html) ·
-[收尾修订](docs/reference/wrap-up.html)。
+[终端基础与 crossterm API](docs/reference/crossterm-terminal-basics.html)。
 
 **部署到 GitHub Pages**：把仓库 Settings → Pages 的 Source 设为 `main` 分支的 `/docs` 目录，
 之后访问 `https://<用户名>.github.io/<仓库名>/` 即可。

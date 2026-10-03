@@ -17,15 +17,15 @@
 <div class="win">
 <p><span class="tag">这门课的目标</span></p>
 <ul>
-<li>把 rustlings 学到的语法，真正用在有状态、有交互、会长期演进的项目上；</li>
-<li>练出「设计数据结构 → 处理所有权与借用 → 拆模块」的真实工程能力；</li>
+<li>把 rustlings 学到的语法，真正用在有状态、有交互、会长期演进的项目上。</li>
+<li>练出「设计数据结构 → 处理所有权与借用 → 拆模块」的真实工程能力。</li>
 <li>最终真正拥有一个能运行的、由自己一行行写出来的编辑器。</li>
 </ul>
 </div>
 
 <h2>课程目录</h2>
 
-<ol class="ref-list">
+<ul class="ref-list">
 <li><a href="lessons/0001-raw-mode-and-events.html">第 1 课 · 接管终端</a>
   —— raw mode、事件循环，用 <code>Drop</code> 守卫保证终端一定被恢复。</li>
 <li><a href="lessons/0002-a-clean-canvas.html">第 2 课 · 干净的画布</a>
@@ -39,20 +39,18 @@
 <li><a href="lessons/0006-chars-vs-columns.html">第 6 课 · 字符 ≠ 列</a>
   —— tab 与宽字符、<code>cx</code>/<code>rx</code> 换算，引入 <code>Row</code>。</li>
 <li><a href="lessons/0007-editing-and-saving.html">第 7 课 · 编辑与保存</a>
-  —— 插入、换行、退格，写回磁盘；借用检查器的主战场。</li>
+  —— 插入、换行、退格，写回磁盘，也是借用检查器的主战场。</li>
 <li><a href="lessons/0008-document-and-ui.html">第 8 课 · 拆出 document 与 ui</a>
-  —— 按接缝拆分缓冲区与渲染；渲染变成只读纯函数。</li>
+  —— 按接缝拆分缓冲区与渲染，让渲染变成只读纯函数。</li>
 <li><a href="lessons/0009-status-and-message-bar.html">第 9 课 · 状态栏与消息栏</a>
   —— 反馈、另存为提示、未保存退出保护。</li>
 <li><a href="lessons/0010-find.html">第 10 课 · 查找</a>
   —— <kbd>Ctrl</kbd>+<kbd>F</kbd> 实时搜索与命中高亮。</li>
 <li><a href="lessons/0011-syntax-highlighting.html">第 11 课 · 语法高亮</a>
   —— 规则表 + 状态机，C / Rust 的注释、字符串、数字、关键字上色。</li>
-</ol>
-
-<div class="callout">
-<p><span class="tag">已完成</span> 核心 11 课。余下是与原版 <code>kilo.c</code> 的细节差距，留待整体回顾。</p>
-</div>
+<li><a href="lessons/0012-wrap-up.html">第 12 课 · 收尾修订</a>
+  —— 对照原版补的控制字符、翻页、<kbd>Tab</kbd>、保存失败、嵌套注释等修补。</li>
+</ul>
 
 <h2>参考文档</h2>
 
@@ -63,20 +61,18 @@
   —— 本课程的风格约定：import 顺序、<code>let-else</code>、RAII、错误处理、字符串转换……</li>
 <li><a href="reference/architecture.html">架构与文件结构</a>
   —— 什么时候该分文件、什么是深模块、<code>kilo-rs</code> 的目标结构。</li>
-<li><a href="reference/wrap-up.html">收尾修订</a>
-  —— 11 课之后对照原版补的控制字符、翻页、<kbd>Tab</kbd>、保存失败等几处修补。</li>
 </ul>
 
 <h2>课程的约定</h2>
 
 <ul>
 <li><strong>代码用英文，讲解用中文</strong>：注释（<code>//</code>、<code>///</code>、<code>//!</code>）和运行时字符串
-  （<code>expect</code>、panic 信息）一律英文；课程正文保持中文。理由：中文里「字符」等词有歧义，
+  （<code>expect</code>、panic 信息）一律英文，课程正文保持中文。理由：中文里「字符」等词有歧义，
   而英文术语精确（<code>code point</code> / <code>column</code> / <code>byte</code>），也与 Rust 生态一致。</li>
 <li><strong>每课都能跑</strong>：任何一步都应能 <code>cargo run</code> 并观察到变化。</li>
 <li><strong>质量门</strong>：<code>cargo clippy --all-targets -- -D warnings</code> 零告警、
   <code>cargo fmt --check</code> 干净，<code>unsafe</code> 一律禁止。</li>
-<li><strong>先体验问题，再引入解法</strong>；重构只做「行为不变的搬家」，绝不一边重构一边加功能。</li>
+<li><strong>先体验问题，再引入解法</strong>，重构只做「行为不变的搬家」，绝不一边重构一边加功能。</li>
 </ul>
 
 <h2>学习资源</h2>
@@ -96,8 +92,7 @@
   <a href="https://reddit.com/r/rust">r/rust</a> · <a href="https://rustcc.cn/">Rust 中文社区</a>。</li>
 </ul>
 
-<p class="footer-note">kilo-rs 课程 · 用 Rust 重写 kilo。</p>
-
 <script src="assets/prism.min.js" defer></script>
+<script src="assets/docs.js" defer></script>
 </body>
 </html>

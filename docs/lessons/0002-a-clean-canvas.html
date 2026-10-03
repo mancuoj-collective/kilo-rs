@@ -11,6 +11,12 @@
 <h1>第 2 课 · 干净的画布</h1>
 <p class="lesson-meta">kilo-rs 课程 · Lesson 0002 · 预计 30–40 分钟 · 需要动手写代码</p>
 
+<nav class="top-nav">
+  <a class="prev" href="0001-raw-mode-and-events.html">← 上一课</a>
+  <a class="home" href="../index.html">目录</a>
+  <a class="next" href="0003-open-a-file.html">下一课 →</a>
+</nav>
+
 <p class="lede">第 1 课的程序只会往终端里打印，退出后那些字还赖在屏幕上。这一课我们给它一整块
 <strong>独立的画布</strong>，学会<strong>一帧一帧地画屏幕</strong>，并且补上第 1 课留下的那个洞——
 让 panic 也能把终端还给你。</p>
@@ -25,7 +31,21 @@
 </ul>
 </div>
 
-<h2>要补的两个洞</h2>
+<nav class="toc">
+  <p class="tag">本课内容</p>
+  <ol>
+    <li><a href="#sec-1">要补的两个洞</a></li>
+    <li><a href="#sec-2">洞 1：备用屏幕（alternate screen）</a></li>
+    <li><a href="#sec-3">洞 2：panic hook</a></li>
+    <li><a href="#sec-4">把一帧「攒」出来：<code>queue!</code> 与 <code>execute!</code></a></li>
+    <li><a href="#sec-5">动手</a></li>
+    <li><a href="#sec-6">逐段拆解（只看这一课的新东西）</a></li>
+    <li><a href="#sec-7">小测</a></li>
+    <li><a href="#sec-8">主要资料</a></li>
+  </ol>
+</nav>
+
+<h2 id="sec-1">要补的两个洞</h2>
 
 <p>第 1 课结束时，程序能接管终端、响应按键了，但有两个问题：</p>
 
@@ -34,7 +54,7 @@
 <li><strong>panic 报告很难看</strong>：报告在 <code>Drop</code> 之前打印，那时还在 raw mode，<code>\n</code> 不回车，于是一路向右缩进成楼梯。</li>
 </ol>
 
-<h2>洞 1：备用屏幕（alternate screen）</h2>
+<h2 id="sec-2">洞 1：备用屏幕（alternate screen）</h2>
 
 <p>终端其实有<strong>两块屏幕</strong>：正常屏幕（你和 shell 一直用的）和<strong>备用屏幕</strong>。
 终端里的 <code>vim</code>、<code>less</code> 都用备用屏幕工作。进入时切过去，退出时切回来——
@@ -49,7 +69,7 @@
 <code>Terminal</code>，它现在持有的是「全屏编辑状态」。</p>
 </div>
 
-<h2>洞 2：panic hook</h2>
+<h2 id="sec-3">洞 2：panic hook</h2>
 
 <p>Rust 允许你安装一个 <strong>panic hook</strong>：它在 panic 发生之后、栈开始展开之前被调用。
 我们在这里<strong>先把终端恢复原状</strong>，再把信息交回给原来的 hook（<code>color-eyre</code> 设置的那个）
@@ -82,7 +102,7 @@
 （线程、错误对象、递归类型都会用到）；但这段 panic hook 的具体写法可以当模板，读懂即可，不必默写。</p>
 </details>
 
-<h2>把一帧「攒」出来：<code>queue!</code> 与 <code>execute!</code></h2>
+<h2 id="sec-4">把一帧「攒」出来：<code>queue!</code> 与 <code>execute!</code></h2>
 
 <p>每次往 <code>stdout</code> 写东西都是一次系统调用，很贵。画一帧要发很多命令（清屏、移动光标、打印……），
 所以 crossterm 提供了两种执行方式：</p>
@@ -98,7 +118,7 @@
 <p>这就是 C 版 kilo 里那个 <code>abuf</code>（追加缓冲区）在现代 crossterm 里的对应物——
 只不过我们不用手写 <code>realloc</code> 了。</p>
 
-<h2>动手</h2>
+<h2 id="sec-5">动手</h2>
 
 <div class="task">
 <p><span class="tag">任务</span> 把 <code>src/main.rs</code> 改成下面的样子</p>
@@ -211,7 +231,7 @@ fn welcome_line(cols: u16) -&gt; String {
 }</code></pre>
 </div>
 
-<h2>逐段拆解（只看这一课的新东西）</h2>
+<h2 id="sec-6">逐段拆解（只看这一课的新东西）</h2>
 
 <ul>
 <li><code>const VERSION: &amp;str = env!("CARGO_PKG_VERSION");</code>：<code>env!</code> 在
@@ -235,8 +255,8 @@ fn welcome_line(cols: u16) -&gt; String {
 <li><strong><code>text.chars().take(cols as usize).collect()</code></strong>：把文字截断到终端宽度。
   读法是把三个迭代器适配器连起来：<code>.chars()</code> 产出 <code>char</code> →
   <code>.take(n)</code> 最多取 n 个 → <code>.collect()</code> 收成一个 <code>String</code>
-  （目标类型由函数返回类型 <code>-&gt; String</code> 推导）。
-  为什么不用 <code>&amp;text[..cols]</code>？那是按<strong>字节</strong>切，<code>cols</code>
+  （目标类型由函数返回类型 <code>-&gt; String</code> 推导）。</li>
+<li><strong>为什么不用 <code>&amp;text[..cols]</code>？</strong>那是按<strong>字节</strong>切，<code>cols</code>
   一旦落在多字节字符中间就会 panic；<code>.chars()</code> 数的是<strong>字符</strong>，永不 panic。
   但字符数 ≠ 终端列宽（中文占 2 列），要彻底做对得等以后引入 <code>unicode-width</code>。</li>
 <li><code>Event::Resize(_, _) =&gt; draw()?</code>：终端尺寸变化会发来 <code>Resize</code> 事件，
@@ -275,7 +295,7 @@ fn welcome_line(cols: u16) -&gt; String {
 <p>验证：在 hook 第一行加 <code>eprintln!("[hook] restore");</code>。看不到它，就说明这个 hook 没被安装。</p>
 </details>
 
-<h2>小测</h2>
+<h2 id="sec-7">小测</h2>
 
 <div class="quiz">
 <p class="q">1. <code>EnterAlternateScreen</code> 的作用是什么？</p>
@@ -323,7 +343,7 @@ fn welcome_line(cols: u16) -&gt; String {
 </details>
 </div>
 
-<h2>主要资料</h2>
+<h2 id="sec-8">主要资料</h2>
 
 <ul class="ref-list">
 <li><strong>备用屏幕 / 光标</strong>：<a href="https://docs.rs/crossterm/0.29.0/crossterm/terminal/index.html">crossterm · terminal</a>、
@@ -349,5 +369,6 @@ fn welcome_line(cols: u16) -&gt; String {
 <p class="footer-note">kilo-rs 课程 · Lesson 0002。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 <script src="../assets/prism.min.js" defer></script>
+<script src="../assets/docs.js" defer></script>
 </body>
 </html>

@@ -11,6 +11,12 @@
 <h1>第 3 课 · 打开一个文件</h1>
 <p class="lesson-meta">kilo-rs 课程 · Lesson 0003 · 预计 30–40 分钟 · 需要动手写代码</p>
 
+<nav class="top-nav">
+  <a class="prev" href="0002-a-clean-canvas.html">← 上一课</a>
+  <a class="home" href="../index.html">目录</a>
+  <a class="next" href="0004-first-refactor.html">下一课 →</a>
+</nav>
+
 <p class="lede">前两课我们搭好了画布，但画布上只有 <code>~</code>。这一课让编辑器真正<strong>打开文件</strong>：
 从命令行拿到路径、读进内存、渲染到屏幕上。你的<strong>第一个数据结构</strong>要登场了。</p>
 
@@ -24,7 +30,19 @@
 </ul>
 </div>
 
-<h2>三个小知识</h2>
+<nav class="toc">
+  <p class="tag">本课内容</p>
+  <ol>
+    <li><a href="#sec-1">三个小知识</a></li>
+    <li><a href="#sec-2">动手</a></li>
+    <li><a href="#sec-3">逐段拆解</a></li>
+    <li><a href="#sec-4">已知限制（先记着，之后处理）</a></li>
+    <li><a href="#sec-5">小测</a></li>
+    <li><a href="#sec-6">主要资料</a></li>
+  </ol>
+</nav>
+
+<h2 id="sec-1">三个小知识</h2>
 
 <h3>① 命令行参数：<code>env::args()</code></h3>
 
@@ -60,7 +78,7 @@
 （Apollo《Rust Best Practices》§1.1）</p>
 </div>
 
-<h2>动手</h2>
+<h2 id="sec-2">动手</h2>
 
 <div class="task">
 <p><span class="tag">任务</span> 把 <code>src/main.rs</code> 改成下面的样子</p>
@@ -186,7 +204,7 @@ fn welcome_line(cols: u16) -&gt; String {
 }</code></pre>
 </div>
 
-<h2>逐段拆解</h2>
+<h2 id="sec-3">逐段拆解</h2>
 
 <ul>
 <li><strong>读文件放在 <code>Terminal::enter()</code> 之前</strong>：这是有意为之。文件打开失败时，
@@ -215,22 +233,22 @@ cargo run
 cargo run -- 不存在的文件.txt</code></pre>
 <ol>
 <li>文件内容铺满屏幕；底部多出来的行是 <code>~</code>。</li>
-<li>故意制造一个<strong>很长的行</strong>（比如把窗口拖窄），观察行是被截断，而不是换行或错位。</li>
+<li>故意弄出一个<strong>很长的行</strong>（比如把窗口拖窄），观察行是被截断，而不是换行或错位。</li>
 <li>不带参数 → 欢迎语。</li>
 <li>文件名写错 → 干净的错误报告（还在正常屏幕上）。</li>
 </ol>
 </div>
 
-<h2>已知限制（先记着，之后处理）</h2>
+<h2 id="sec-4">已知限制（先记着，之后处理）</h2>
 
 <ul>
 <li><strong>只能显示前 <code>rows</code> 行</strong>：还不能滚动。下一步就做光标和滚动。</li>
 <li><strong>必须是合法 UTF-8</strong>：<code>read_to_string</code> 对二进制文件会报错。
-  原版 C kilo 是字节导向的，这里是一个真实的取舍——等以后真要把它做成编辑器时再处理。</li>
+  原版 C kilo 是字节导向的，这里是一个真实的取舍——等真正需要支持二进制文件时再处理。</li>
 <li><strong>宽字符没处理</strong>：超长行按「字符数」截断，但中文占 2 列，还不精确。</li>
 </ul>
 
-<h2>小测</h2>
+<h2 id="sec-5">小测</h2>
 
 <div class="quiz">
 <p class="q">1. <code>.lines()</code> 产出的每一行是什么类型？</p>
@@ -278,7 +296,7 @@ cargo run -- 不存在的文件.txt</code></pre>
 </details>
 </div>
 
-<h2>主要资料</h2>
+<h2 id="sec-6">主要资料</h2>
 
 <ul class="ref-list">
 <li><code>std::fs::read_to_string</code>：<a href="https://doc.rust-lang.org/std/fs/fn.read_to_string.html">标准库文档</a>。</li>
@@ -303,5 +321,6 @@ cargo run -- 不存在的文件.txt</code></pre>
 <p class="footer-note">kilo-rs 课程 · Lesson 0003。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 <script src="../assets/prism.min.js" defer></script>
+<script src="../assets/docs.js" defer></script>
 </body>
 </html>

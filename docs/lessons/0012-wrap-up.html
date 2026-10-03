@@ -3,19 +3,36 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>参考 · 收尾修订</title>
+<title>第 12 课 · 收尾修订</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 
-<h1>参考 · 收尾修订</h1>
-<p class="lesson-meta">kilo-rs 课程 · Reference 0004 · 11 课之后的几处「对照原版」修补</p>
+<h1>第 12 课 · 收尾修订</h1>
+<p class="lesson-meta">kilo-rs 课程 · Lesson 0012 · 11 课之后的收尾修订（对照原版）</p>
+
+<nav class="top-nav">
+  <a class="prev" href="0011-syntax-highlighting.html">← 上一课</a>
+  <a class="home" href="../index.html">目录</a>
+  <span></span>
+</nav>
 
 <p class="lede">第 1–11 课把核心功能一课一课搭起来了。之后又对照原版 <code>kilo.c</code>
 补了几处<strong>收尾修订</strong>：既修掉一个真问题，也把几处行为对齐。如果你是一路敲下来的，
 把这些补上就与仓库里的 <code>src/</code> 一致了。</p>
 
-<h2>一、控制字符不再原样输出（真问题）</h2>
+<nav class="toc">
+  <p class="tag">本课内容</p>
+  <ol>
+    <li><a href="#sec-1">一、控制字符不再原样输出（真问题）</a></li>
+    <li><a href="#sec-2">二、保存失败不再退出程序</a></li>
+    <li><a href="#sec-3">三、补齐三个按键</a></li>
+    <li><a href="#sec-4">四、收尾优化</a></li>
+    <li><a href="#sec-5">验收</a></li>
+  </ol>
+</nav>
+
+<h2 id="sec-1">一、控制字符不再原样输出（真问题）</h2>
 
 <p>文件里若有不可打印字节（例如 <code>\x1b</code>），旧代码会把它<strong>直接写到终端</strong>——
 ESC 会被终端当成转义序列，可能搞乱屏幕。原版把不可打印字节显示成<strong>反显</strong>的符号
@@ -83,7 +100,7 @@ if segment.control {
     queue!(stdout, SetAttribute(Attribute::Reset))?;
 }</code></pre>
 
-<h2>二、保存失败不再退出程序</h2>
+<h2 id="sec-2">二、保存失败不再退出程序</h2>
 
 <p>原版写盘失败时只显示 <code>Can't save! …</code> 然后<strong>继续编辑</strong>；旧代码把 I/O 错误
 抛到 <code>run</code>，整个程序就退出了。改成在消息栏报告：</p>
@@ -95,7 +112,7 @@ if segment.control {
     }
     Ok(())</code></pre>
 
-<h2>三、补齐三个按键</h2>
+<h2 id="sec-3">三、补齐三个按键</h2>
 
 <p>原版还认 <kbd>PageUp</kbd>/<kbd>PageDown</kbd>（翻页）与 <kbd>Tab</kbd>（插入制表符）。
 <code>src/editor.rs</code> 加两个方法：</p>
@@ -152,7 +169,7 @@ fn render(editor: &amp;mut Editor) -&gt; io::Result&lt;()&gt; {
 
 <pre><code class="language-rust">let query = prompt_with(editor, "Search (ESC/Arrows/Enter): ", |editor, query, key| match key {</code></pre>
 
-<h2>四、收尾优化</h2>
+<h2 id="sec-4">四、收尾优化</h2>
 
 <h3>Rust 嵌套块注释</h3>
 <p>原版（C）一遇到 <code>*/</code> 就结束注释；但 Rust 允许嵌套 <code>/* /* */ */</code>。
@@ -269,7 +286,7 @@ let right = truncate(
     cols,
 );</code></pre>
 
-<h2>验收</h2>
+<h2 id="sec-5">验收</h2>
 
 <pre><code class="language-bash">cargo test              # 40 个单元测试
 cargo clippy --all-targets -- -D warnings
@@ -286,10 +303,13 @@ cargo fmt --check</code></pre>
 </div>
 
 <div class="lesson-nav">
-  <a class="prev" href="architecture.html">← 参考 · 架构与文件结构</a>
-  <a class="next" href="../lessons/0001-raw-mode-and-events.html">第 1 课 · 接管终端 →</a>
+  <a class="prev" href="0011-syntax-highlighting.html">← 第 11 课 · 语法高亮</a>
+  <a class="next" href="../index.html">课程目录 →</a>
 </div>
 
+<p class="footer-note">kilo-rs 课程 · Lesson 0012。总目录见 <a href="../index.html">课程目录</a>。</p>
+
 <script src="../assets/prism.min.js" defer></script>
+<script src="../assets/docs.js" defer></script>
 </body>
 </html>

@@ -190,6 +190,76 @@ details p { margin: .5rem 0; }
 .lesson-nav a { border: none; }
 .lesson-nav .next { margin-left: auto; text-align: right; }
 
+/* —— 顶部导航条 + 「本课内容」小目录 —— */
+.top-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: .86rem;
+  margin: 1.1rem 0 0;
+}
+.top-nav a { border: none; }
+.top-nav .home { color: var(--stone); }
+.top-nav .prev, .top-nav .next { color: var(--brand); }
+
+.toc { margin: 1.6rem 0 0; }
+.toc ol { margin: .35rem 0 0; padding-left: 1.3rem; }
+.toc li { margin: .12rem 0; font-size: .92rem; }
+.toc a { border: none; color: var(--olive); }
+.toc a.active { color: var(--brand); }
+
+/* —— modern-docs 形式：sticky 顶栏 / 锚点 / 复制按钮 / 右侧常驻目录 —— */
+.top-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--parchment);
+  padding: .55rem 0 .6rem;
+  border-bottom: 0.5pt solid var(--border);
+}
+
+h2 .anchor {
+  margin-left: .45rem;
+  font-size: .78em;
+  color: var(--stone);
+  border: none;
+  opacity: 0;
+  transition: opacity .15s;
+}
+h2:hover .anchor { opacity: .5; }
+h2 .anchor:hover { opacity: 1; color: var(--brand); }
+
+pre { position: relative; }
+pre .copy {
+  position: absolute;
+  top: .5rem;
+  right: .5rem;
+  font-family: var(--sans);
+  font-size: .72rem;
+  line-height: 1;
+  color: var(--dark-warm);
+  background: var(--warm-sand);
+  border: 0;
+  border-radius: 4px;
+  padding: .3rem .55rem;
+  cursor: pointer;
+  opacity: .7;
+  transition: opacity .15s, color .15s;
+}
+pre .copy:hover, pre .copy:focus { opacity: 1; color: var(--brand); }
+
+@media (min-width: 1260px) {
+  .toc {
+    position: fixed;
+    top: 4.8rem;
+    left: calc(50% + 23rem + 2.4rem);
+    width: 200px;
+    max-height: calc(100vh - 6.4rem);
+    overflow-y: auto;
+    margin: 0;
+  }
+}
+
 .footer-note { color: var(--stone); font-size: .86rem; margin-top: 2.4rem; }
 
 /* —— Prism 代码高亮：多色暖调（比 kami 的单色更花，适合教程）—— */

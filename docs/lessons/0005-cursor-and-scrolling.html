@@ -11,6 +11,12 @@
 <h1>第 5 课 · 光标与滚动</h1>
 <p class="lesson-meta">kilo-rs 课程 · Lesson 0005 · 预计 35–45 分钟 · 加功能 + 第一次写测试</p>
 
+<nav class="top-nav">
+  <a class="prev" href="0004-first-refactor.html">← 上一课</a>
+  <a class="home" href="../index.html">目录</a>
+  <a class="next" href="0006-chars-vs-columns.html">下一课 →</a>
+</nav>
+
 <p class="lede">文件已经能显示了，但你只能看到第一屏，而且还没有光标。<br>
 这一课让光标动起来、让画面跟着它滚动——同时第一次把「一堆相关状态」收进一个结构
 <code>Editor</code>，并<strong>为它写单元测试</strong>。还记得第 4 课为什么要拆出 <code>lib.rs</code> 吗？现在正是回报的时候。</p>
@@ -25,7 +31,19 @@
 </ul>
 </div>
 
-<h2>核心概念：文件坐标 vs 屏幕坐标</h2>
+<nav class="toc">
+  <p class="tag">本课内容</p>
+  <ol>
+    <li><a href="#sec-1">核心概念：文件坐标 vs 屏幕坐标</a></li>
+    <li><a href="#sec-2">为什么现在收进结构</a></li>
+    <li><a href="#sec-3">动手</a></li>
+    <li><a href="#sec-4">逐段拆解</a></li>
+    <li><a href="#sec-5">小测</a></li>
+    <li><a href="#sec-6">主要资料</a></li>
+  </ol>
+</nav>
+
+<h2 id="sec-1">核心概念：文件坐标 vs 屏幕坐标</h2>
 
 <p>文件可能比屏幕大，所以「光标在哪」和「光标画在哪」是两件事，中间隔着一个<strong>视口</strong>：</p>
 
@@ -57,7 +75,7 @@
 所以 <code>cy - rowoff</code>、<code>cx - coloff</code> 一定落在屏幕内——这就是 <code>draw</code> 敢直接用它的原因。</p>
 </div>
 
-<h2>为什么现在收进结构</h2>
+<h2 id="sec-2">为什么现在收进结构</h2>
 
 <p>上一课里，状态还是局部变量；现在一下子多出 4 个（<code>cx</code>/<code>cy</code>/<code>rowoff</code>/<code>coloff</code>），
 而且它们<strong>总是一起被读写</strong>——这就是「接缝清晰了」的体现。把它们装进 <code>Editor</code>，
@@ -68,7 +86,7 @@
 给定一串操作，断言光标/视口。这正是「把逻辑放进库」换来的东西——<strong>不启动界面也能测核心逻辑</strong>。</p>
 </div>
 
-<h2>动手</h2>
+<h2 id="sec-3">动手</h2>
 
 <div class="task">
 <p><span class="tag">任务 1</span> 新建 <code>src/editor.rs</code></p>
@@ -368,15 +386,15 @@ cargo test                 # 3 unit tests, no terminal needed
 cargo clippy --all-targets -- -D warnings</code></pre>
 </div>
 
-<h2>逐段拆解</h2>
+<h2 id="sec-4">逐段拆解</h2>
 
 <ul>
 <li><strong><code>Editor</code> 不 import 任何 crossterm</strong>：这是有意的。它只管状态，
   「按键怎么映射到移动」由 <code>lib.rs</code> 的事件循环负责。于是 <code>Editor</code> 可测、可复用、
   以后换 TUI 库也不受影响。</li>
 <li><code>Move</code> 派生 <code>Copy</code>：它是一个小巧的「标签」枚举，按值传递最自然。
-  若不派生 <code>Copy</code>，<code>clippy::pedantic</code> 会提示「按值传入但没消费」，让你改成引用——
-  一个本不该按引用传的值类型，反倒被建议传引用；这个 lint 正是在提醒你补上 <code>Copy</code>。</li>
+  若不派生 <code>Copy</code>，<code>clippy::pedantic</code> 会提示「按值传入但没消费」，建议你改成引用。
+  但这个值类型本该按值传递——该 lint 其实是在提醒你补上 <code>Copy</code>。</li>
 <li>getter 上的 <code>#[must_use]</code>：<code>clippy::pedantic</code> 要求公开的「返回值的函数」标注
   <code>#[must_use]</code>——因为忽略 <code>cursor()</code> 的返回值多半是写错了。</li>
 <li><code>line_len</code> 用 <code>chars().count()</code> 而不是 <code>len()</code>：
@@ -401,7 +419,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 </ul>
 </div>
 
-<h2>小测</h2>
+<h2 id="sec-5">小测</h2>
 
 <div class="quiz">
 <p class="q">1. 光标画在屏幕第几行，由什么决定？</p>
@@ -448,7 +466,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 </details>
 </div>
 
-<h2>主要资料</h2>
+<h2 id="sec-6">主要资料</h2>
 <ul class="ref-list">
 <li>对应章节：<a href="https://viewsourcecode.org/snaptoken/kilo/03.rawInputAndOutput.html">snaptoken 第 3 章</a>
   （光标移动与滚动）、<a href="https://www.flenker.blog/hecto-chapter-4/">hecto 第 4 章</a>。</li>
@@ -472,5 +490,6 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 <p class="footer-note">kilo-rs 课程 · Lesson 0005。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 <script src="../assets/prism.min.js" defer></script>
+<script src="../assets/docs.js" defer></script>
 </body>
 </html>

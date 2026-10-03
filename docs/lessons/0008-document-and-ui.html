@@ -11,6 +11,12 @@
 <h1>第 8 课 · 拆出 document 与 ui</h1>
 <p class="lesson-meta">kilo-rs 课程 · Lesson 0008 · 预计 35–45 分钟 · 只搬家，不加功能</p>
 
+<nav class="top-nav">
+  <a class="prev" href="0007-editing-and-saving.html">← 上一课</a>
+  <a class="home" href="../index.html">目录</a>
+  <a class="next" href="0009-status-and-message-bar.html">下一课 →</a>
+</nav>
+
 <p class="lede">第 7 课之后，<code>Editor</code> 同时管着三件事：<strong>缓冲区</strong>（数据）、
 <strong>光标 / 视口</strong>（状态）、<strong>渲染</strong>（表现）。这一课按接缝把它拆开，
 让每块只做一件事，并把渲染变成<strong>只读</strong>的纯函数。</p>
@@ -25,7 +31,18 @@
 </ul>
 </div>
 
-<h2>拆分的依据：三块职责已经长在一起</h2>
+<nav class="toc">
+  <p class="tag">本课内容</p>
+  <ol>
+    <li><a href="#sec-1">拆分的依据：三块职责已经长在一起</a></li>
+    <li><a href="#sec-2">动手</a></li>
+    <li><a href="#sec-3">逐段拆解</a></li>
+    <li><a href="#sec-4">小测</a></li>
+    <li><a href="#sec-5">主要资料</a></li>
+  </ol>
+</nav>
+
+<h2 id="sec-1">拆分的依据：三块职责已经长在一起</h2>
 
 <p>第 7 课的 <code>Editor</code> 里混着三种变化：</p>
 
@@ -46,7 +63,7 @@
 再跑一遍。<strong>绝不一边重构一边加功能</strong>——否则「搬错了」和「新 bug」会混在一起。</p>
 </div>
 
-<h2>动手</h2>
+<h2 id="sec-2">动手</h2>
 
 <div class="task">
 <p><span class="tag">任务 1</span> 新建 <code>src/document.rs</code></p>
@@ -530,7 +547,7 @@ cargo test             # 15 个单元测试
 cargo clippy --all-targets -- -D warnings</code></pre>
 </div>
 
-<h2>逐段拆解</h2>
+<h2 id="sec-3">逐段拆解</h2>
 
 <ul>
 <li><strong>渲染变成纯函数</strong>：<code>draw</code> 收 <code>&amp;Editor</code>（只读）。能做到是因为把
@@ -554,7 +571,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 <code>Editor</code> 里；删掉 <code>ui.rs</code>：渲染又会和事件循环纠缠。两个模块都<strong>通过了删除测试</strong>。</p>
 </div>
 
-<h2>小测</h2>
+<h2 id="sec-4">小测</h2>
 
 <div class="quiz">
 <p class="q">1. <code>ui::draw</code> 为什么能收 <code>&amp;Editor</code> 而不是 <code>&amp;mut Editor</code>？</p>
@@ -601,7 +618,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 </details>
 </div>
 
-<h2>主要资料</h2>
+<h2 id="sec-5">主要资料</h2>
 <ul class="ref-list">
 <li>深模块与接缝：本课程参考 <code>codebase-design</code>（删除测试、接口小实现大）；速查见
   <a href="../reference/architecture.html">架构与文件结构</a>。</li>
@@ -622,5 +639,6 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 <p class="footer-note">kilo-rs 课程 · Lesson 0008。总目录见 <a href="../index.html">课程目录</a>。</p>
 
 <script src="../assets/prism.min.js" defer></script>
+<script src="../assets/docs.js" defer></script>
 </body>
 </html>
