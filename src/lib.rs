@@ -37,31 +37,39 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Returns an error if reading the file or a terminal operation fails.
 pub fn run() -> Result<()> {
     // Read the file name from argv; with no argument, start with an empty buffer.
-    let lines = match env::args().nth(1) {
-        Some(path) => fs::read_to_string(&path)?
+    let path = env::args().nth(1);
+    let lines = match &path {
+        Some(path) => fs::read_to_string(path)?
             .lines()
             .map(str::to_owned)
             .collect(),
         None => Vec::new(),
     };
 
-    let mut editor = Editor::new(&lines);
+    let mut editor = Editor::new(&lines, path);
 
     let _guard = Terminal::enter()?;
     draw(&mut editor)?;
 
     loop {
         match event::read()? {
-            Event::Key(key) if key.is_press() => match key.code {
-                KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
-                KeyCode::Up => editor.move_cursor(Move::Up),
-                KeyCode::Down => editor.move_cursor(Move::Down),
-                KeyCode::Left => editor.move_cursor(Move::Left),
-                KeyCode::Right => editor.move_cursor(Move::Right),
-                KeyCode::Home => editor.move_cursor(Move::Home),
-                KeyCode::End => editor.move_cursor(Move::End),
-                _ => {}
-            },
+            Event::Key(key) if key.is_press() => {
+                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                match key.code {
+                    KeyCode::Char('q') if ctrl => break,
+                    KeyCode::Char('s') if ctrl => editor.save()?,
+                    KeyCode::Char(ch) if !ctrl => editor.insert_char(ch),
+                    KeyCode::Enter => editor.insert_newline(),
+                    KeyCode::Backspace | KeyCode::Delete => editor.delete_char(),
+                    KeyCode::Up => editor.move_cursor(Move::Up),
+                    KeyCode::Down => editor.move_cursor(Move::Down),
+                    KeyCode::Left => editor.move_cursor(Move::Left),
+                    KeyCode::Right => editor.move_cursor(Move::Right),
+                    KeyCode::Home => editor.move_cursor(Move::Home),
+                    KeyCode::End => editor.move_cursor(Move::End),
+                    _ => {}
+                }
+            }
             _ => {}
         }
         draw(&mut editor)?;
@@ -78,8 +86,9 @@ fn draw(editor: &mut Editor) -> io::Result<()> {
     let (cols, rows) = terminal::size()?;
     let width = cols as usize;
     let height = rows as usize;
+    let text_height = height.saturating_sub(1); // keep the bottom row for the status line
 
-    editor.scroll(height, width);
+    editor.scroll(text_height, width);
 
     let (coloff, rowoff) = editor.viewport();
     let (rx, cy) = editor.cursor();
@@ -87,11 +96,11 @@ fn draw(editor: &mut Editor) -> io::Result<()> {
     let mut stdout = io::stdout();
     queue!(stdout, cursor::Hide, Clear(ClearType::All), MoveTo(0, 0))?;
 
-    for y in 0..height {
+    for y in 0..text_height {
         let filerow = rowoff + y;
         if let Some(text) = editor.render_line(filerow, coloff, width) {
             queue!(stdout, Print(text))?;
-        } else if editor.is_empty() && y == height / 3 {
+        } else if editor.is_empty() && y == text_height / 3 {
             queue!(stdout, Print(welcome_line(cols)))?;
         } else {
             queue!(stdout, Print('~'))?;
@@ -101,6 +110,21 @@ fn draw(editor: &mut Editor) -> io::Result<()> {
             queue!(stdout, Print("\r\n"))?;
         }
     }
+
+    // Status line on the bottom row.
+    let name = editor.filename().unwrap_or("[No Name]");
+    let modified = if editor.is_dirty() {
+        "  [modified]"
+    } else {
+        ""
+    };
+    let status = truncate(&format!("{name}{modified}"), cols);
+    queue!(
+        stdout,
+        MoveTo(0, rows.saturating_sub(1)),
+        Clear(ClearType::CurrentLine),
+        Print(status),
+    )?;
 
     // The viewport guarantees the cursor is on screen, so these conversions can't fail.
     let cursor_col =

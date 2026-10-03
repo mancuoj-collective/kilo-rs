@@ -65,7 +65,7 @@ impl Row {
             }
             col = next;
         }
-        self.chars.len()
+        self.len()
     }
 
     /// Returns the text in display columns `[coloff, coloff + width)`.
@@ -97,6 +97,39 @@ impl Row {
         }
 
         out
+    }
+
+    /// The row's characters as a string (used when saving).
+    #[must_use]
+    pub fn text(&self) -> String {
+        self.chars.iter().collect()
+    }
+
+    /// Inserts `ch` at char index `cx` (clamped to the row length).
+    pub fn insert_char(&mut self, cx: usize, ch: char) {
+        let at = cx.min(self.len());
+        self.chars.insert(at, ch);
+    }
+
+    /// Removes the char at `cx`, if it exists.
+    pub fn delete_char(&mut self, cx: usize) {
+        if cx < self.len() {
+            self.chars.remove(cx);
+        }
+    }
+
+    /// Splits the row at `cx`, returning the tail as a new row.
+    #[must_use]
+    pub fn split_off(&mut self, cx: usize) -> Self {
+        let at = cx.min(self.len());
+        Self {
+            chars: self.chars.split_off(at),
+        }
+    }
+
+    /// Appends another row's characters to the end of this one.
+    pub fn append(&mut self, other: &mut Row) {
+        self.chars.append(&mut other.chars);
     }
 }
 
@@ -141,5 +174,15 @@ mod tests {
         let row = Row::new("中文");
         assert_eq!(row.render_window(0, 4), "中文");
         assert_eq!(row.render_window(0, 3), "中 ");
+    }
+
+    #[test]
+    fn split_and_append_round_trip() {
+        let mut row = Row::new("abcd");
+        let mut tail = row.split_off(2);
+        assert_eq!(row.text(), "ab");
+        assert_eq!(tail.text(), "cd");
+        row.append(&mut tail);
+        assert_eq!(row.text(), "abcd");
     }
 }

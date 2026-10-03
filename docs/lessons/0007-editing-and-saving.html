@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 7 课 · 编辑与保存</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>第 7 课 · 编辑与保存</h1>
+<p class="lesson-meta">kilo-rs 课程 · Lesson 0007 · 预计 45–60 分钟 · 加功能，也是借用检查器的主战场</p>
+
+<p class="lede">文件能看了、光标能动了，但它还是<strong>只读</strong>的。这一课让它真正可写：
+插入字符、回车换行、退格删除，再按 <kbd>Ctrl</kbd>+<kbd>S</kbd> 写回磁盘。
+<code>Row</code> / <code>Editor</code> 会长出修改方法——也是<strong>借用检查器正式上强度</strong>的地方。</p>
+
+<div class="win">
+<p><span class="tag">本课成果</span></p>
+<ul>
+<li>能敲字、回车、退格；中文与 tab 位置依然正确；</li>
+<li>底部出现<strong>状态栏</strong>，显示文件名，改动后带 <code>[modified]</code>；</li>
+<li><kbd>Ctrl</kbd>+<kbd>S</kbd> 保存到磁盘，<code>[modified]</code> 随之消失；</li>
+<li>单元测试增加到 <strong>12 个</strong>（新增拆分/连接/插入/回车/退格）。</li>
+</ul>
+</div>
+
+<h2>编辑的本质：改「行」</h2>
+
+<p>光标告诉我们「改哪一行的第几个字符」，真正的修改发生在 <code>Row</code> 上。
+三件事支撑起全部编辑：</p>
+
+<table>
+<thead><tr><th>操作</th><th>做法</th></tr></thead>
+<tbody>
+<tr><td>插入一个字符</td><td><code>chars.insert(cx, ch)</code></td></tr>
+<tr><td>删除一个字符</td><td><code>chars.remove(cx)</code></td></tr>
+<tr><td>回车 / 退格跨行</td><td>把行<strong>拆开</strong>（<code>split_off</code>）或<strong>接起来</strong>（<code>append</code>）</td></tr>
+</tbody>
+</table>
+
+<p>回车：在光标处把当前行切成上下两行。退格在行首：把当前行接到上一行末尾。两者都只是在
+<code>Vec&lt;Row&gt;</code> 上增删元素。</p>
+
+<h2>借用检查器的正面战场</h2>
+
+<p>写「把当前行接到上一行」时，你会撞上本课最典型的冲突：</p>
+
+<pre><code class="language-rust">// ❌ 同时可变借用 self.rows 的两个元素
+let prev = &amp;mut self.rows[self.cy - 1];
+let cur = &amp;mut self.rows[self.cy];
+prev.append(cur);</code></pre>
+
+<p>编译器会说「cannot borrow <code>self.rows</code> as mutable more than once」。规则是
+<strong>同一时刻只能有一个可变借用</strong>——而这里你有两个。</p>
+
+<div class="callout">
+<p><span class="tag">解法</span> 不要让两行<strong>同时</strong>被借用。先把当前行从
+<code>Vec</code> 里 <code>remove</code> 出来，让它<strong>归你所有</strong>，再把它的字符 append 到上一行。
+冲突消失，语义也更清楚：这一行本来就要没了。</p>
+<p>这是 <code>m03-mutability</code> 的核心提问：<strong>「冲突说明数据结构用错了吗？」</strong>
+——多数时候不是结构错，而是<strong>借用的作用域</strong>没设计好。先缩小作用域、或先取出来拥有它，
+而不是急着 <code>clone()</code> 绕过（那是 <code>m15-anti-pattern</code> 里的头号反模式）。</p>
+</div>
+
+<h2>动手</h2>
+
+<div class="task">
+<p><span class="tag">任务 1</span> 给 <code>src/row.rs</code> 加上编辑方法</p>
+<p>在 <code>impl Row</code> 里加入这些方法（其余不变）：</p>
+<pre><code class="language-rust">    /// The row's characters as a string (used when saving).
+    #[must_use]
+    pub fn text(&amp;self) -&gt; String {
+        self.chars.iter().collect()
+    }
+
+    /// Inserts `ch` at char index `cx` (clamped to the row length).
+    pub fn insert_char(&amp;mut self, cx: usize, ch: char) {
+        let at = cx.min(self.len());
+        self.chars.insert(at, ch);
+    }
+
+    /// Removes the char at `cx`, if it exists.
+    pub fn delete_char(&amp;mut self, cx: usize) {
+        if cx &lt; self.len() {
+            self.chars.remove(cx);
+        }
+    }
+
+    /// Splits the row at `cx`, returning the tail as a new row.
+    #[must_use]
+    pub fn split_off(&amp;mut self, cx: usize) -&gt; Self {
+        let at = cx.min(self.len());
+        Self {
+            chars: self.chars.split_off(at),
+        }
+    }
+
+    /// Appends another row's characters to the end of this one.
+    pub fn append(&amp;mut self, other: &amp;mut Row) {
+        self.chars.append(&amp;mut other.chars);
+    }</code></pre>
+<p>再加一个测试：</p>
+<pre><code class="language-rust">    #[test]
+    fn split_and_append_round_trip() {
+        let mut row = Row::new("abcd");
+        let mut tail = row.split_off(2);
+        assert_eq!(row.text(), "ab");
+        assert_eq!(tail.text(), "cd");
+        row.append(&amp;mut tail);
+        assert_eq!(row.text(), "abcd");
+    }</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 2</span> 改 <code>src/editor.rs</code></p>
+<p>新增两个字段（文件名、脏标记）、改 <code>new</code> 的签名，加入编辑与保存方法：</p>
+<pre><code class="language-rust">pub struct Editor {
+    rows: Vec&lt;Row&gt;,
+    /// File name, when the buffer came from (or is saved to) a file.
+    filename: Option&lt;String&gt;,
+    /// Whether the buffer has unsaved changes.
+    dirty: bool,
+    cx: usize,
+    cy: usize,
+    coloff: usize,
+    rowoff: usize,
+}
+
+impl Editor {
+    /// Creates a new editor from the given lines and optional file name.
+    #[must_use]
+    pub fn new(lines: &amp;[String], filename: Option&lt;String&gt;) -&gt; Self {
+        Self {
+            rows: lines.iter().map(|line| Row::new(line)).collect(),
+            filename,
+            dirty: false,
+            cx: 0,
+            cy: 0,
+            coloff: 0,
+            rowoff: 0,
+        }
+    }
+
+    /// Whether the buffer has unsaved changes.
+    #[must_use]
+    pub fn is_dirty(&amp;self) -&gt; bool {
+        self.dirty
+    }
+
+    /// File name shown in the status line.
+    #[must_use]
+    pub fn filename(&amp;self) -&gt; Option&lt;&amp;str&gt; {
+        self.filename.as_deref()
+    }
+
+    /// The whole buffer as text, rows joined by `\n`.
+    #[must_use]
+    pub fn serialize(&amp;self) -&gt; String {
+        let mut out = String::new();
+        for row in &amp;self.rows {
+            out.push_str(&amp;row.text());
+            out.push('\n');
+        }
+        out
+    }
+
+    /// Writes the buffer to its file. Does nothing when there is no file name.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying I/O error if the file cannot be written.
+    pub fn save(&amp;mut self) -&gt; io::Result&lt;()&gt; {
+        let Some(path) = &amp;self.filename else {
+            return Ok(());
+        };
+        std::fs::write(path, self.serialize())?;
+        self.dirty = false;
+        Ok(())
+    }
+
+    /// Inserts `ch` at the cursor.
+    pub fn insert_char(&amp;mut self, ch: char) {
+        if self.cy == self.rows.len() {
+            self.rows.push(Row::new(""));
+        }
+        if let Some(row) = self.rows.get_mut(self.cy) {
+            row.insert_char(self.cx, ch);
+        }
+        self.cx += 1;
+        self.dirty = true;
+    }
+
+    /// Splits the current row at the cursor (Enter / Return).
+    pub fn insert_newline(&amp;mut self) {
+        if self.cx == 0 || self.cy &gt;= self.rows.len() {
+            self.rows.insert(self.cy, Row::new(""));
+        } else {
+            let tail = self.rows[self.cy].split_off(self.cx);
+            self.rows.insert(self.cy + 1, tail);
+        }
+        self.cy += 1;
+        self.cx = 0;
+        self.dirty = true;
+    }
+
+    /// Deletes the char before the cursor; at column 0 it joins with the previous row.
+    pub fn delete_char(&amp;mut self) {
+        if self.cy &gt;= self.rows.len() {
+            return;
+        }
+        if self.cx == 0 {
+            if self.cy == 0 {
+                return;
+            }
+            // Take the current row out so we own it, then append it to the previous one.
+            let mut row = self.rows.remove(self.cy);
+            let prev = &amp;mut self.rows[self.cy - 1];
+            self.cx = prev.len();
+            prev.append(&amp;mut row);
+            self.cy -= 1;
+        } else {
+            self.rows[self.cy].delete_char(self.cx - 1);
+            self.cx -= 1;
+        }
+        self.dirty = true;
+    }
+
+    // … move_cursor / scroll / current_line_len / current_rx 与第 6 课相同</code></pre>
+<p>测试里所有 <code>Editor::new(...)</code> 补上第二参数 <code>None</code>，并新增三个编辑测试：</p>
+<pre><code class="language-rust">    #[test]
+    fn insert_char_updates_row_and_cursor() {
+        let mut e = Editor::new(&amp;[String::from("ab")], None);
+        e.move_cursor(Move::End);
+        e.insert_char('c');
+        assert_eq!(e.cursor(), (3, 0));
+        assert_eq!(e.serialize(), "abc\n");
+        assert!(e.is_dirty());
+    }
+
+    #[test]
+    fn enter_splits_the_line() {
+        let mut e = Editor::new(&amp;[String::from("abcd")], None);
+        e.move_cursor(Move::Right);
+        e.move_cursor(Move::Right); // cx = 2
+        e.insert_newline();
+        assert_eq!(e.cursor(), (0, 1));
+        assert_eq!(e.serialize(), "ab\ncd\n");
+    }
+
+    #[test]
+    fn backspace_at_column_zero_joins_lines() {
+        let mut e = editor();
+        e.move_cursor(Move::Down); // cy = 1, cx = 0
+        e.delete_char();
+        assert_eq!(e.cursor(), (5, 0));
+        assert_eq!(e.serialize(), "helloworld!!\n");
+    }</code></pre>
+<p>别忘了 <code>use std::io;</code>（<code>save</code> 用到）。</p>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 3</span> 改 <code>src/lib.rs</code>：接按键 + 画状态栏</p>
+<p><code>run</code> 里把文件名交给编辑器，并处理编辑按键：</p>
+<pre><code class="language-rust">    // Read the file name from argv; with no argument, start with an empty buffer.
+    let path = env::args().nth(1);
+    let lines = match &amp;path {
+        Some(path) =&gt; fs::read_to_string(path)?
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+        None =&gt; Vec::new(),
+    };
+
+    let mut editor = Editor::new(&amp;lines, path);
+    // … Terminal::enter() 之后：
+    loop {
+        match event::read()? {
+            Event::Key(key) if key.is_press() =&gt; {
+                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                match key.code {
+                    KeyCode::Char('q') if ctrl =&gt; break,
+                    KeyCode::Char('s') if ctrl =&gt; editor.save()?,
+                    KeyCode::Char(ch) if !ctrl =&gt; editor.insert_char(ch),
+                    KeyCode::Enter =&gt; editor.insert_newline(),
+                    KeyCode::Backspace | KeyCode::Delete =&gt; editor.delete_char(),
+                    KeyCode::Up =&gt; editor.move_cursor(Move::Up),
+                    KeyCode::Down =&gt; editor.move_cursor(Move::Down),
+                    KeyCode::Left =&gt; editor.move_cursor(Move::Left),
+                    KeyCode::Right =&gt; editor.move_cursor(Move::Right),
+                    KeyCode::Home =&gt; editor.move_cursor(Move::Home),
+                    KeyCode::End =&gt; editor.move_cursor(Move::End),
+                    _ =&gt; {}
+                }
+            }
+            _ =&gt; {}
+        }
+        draw(&amp;mut editor)?;
+    }</code></pre>
+<p><code>draw</code> 里留出最后一行做状态栏：</p>
+<pre><code class="language-rust">    let text_height = height.saturating_sub(1); // keep the bottom row for the status line
+
+    editor.scroll(text_height, width);
+    // … 正文循环改成 for y in 0..text_height { … }
+
+    // Status line on the bottom row.
+    let name = editor.filename().unwrap_or("[No Name]");
+    let modified = if editor.is_dirty() { "  [modified]" } else { "" };
+    let status = truncate(&amp;format!("{name}{modified}"), cols);
+    queue!(
+        stdout,
+        MoveTo(0, rows.saturating_sub(1)),
+        Clear(ClearType::CurrentLine),
+        Print(status),
+    )?;</code></pre>
+<p>（光标定位、<code>truncate</code>、<code>welcome_line</code> 不变。）</p>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 4</span> 运行 + 测试 + clippy</p>
+<pre><code class="language-bash">cargo run -- t.txt     # 敲字、回车、退格；Ctrl-S 看 [modified] 消失
+cargo test             # 12 个单元测试
+cargo clippy --all-targets -- -D warnings</code></pre>
+</div>
+
+<h2>逐段拆解</h2>
+
+<ul>
+<li><strong><code>split_off</code> / <code>append</code> 为什么是方法而不是就地拼</strong>：它们表达的是「行的拆分与连接」这一个概念，
+  放在 <code>Row</code> 上，编辑逻辑就都能用「取出一行、处理、放回」这套动作写，不必在 <code>Editor</code> 里摆弄字符数组。</li>
+<li><strong><code>let tail = self.rows[self.cy].split_off(self.cx);</code></strong>：这一句的借用只持续到分号。
+  先把尾段「切出来成为新行」（拥有它），再 <code>rows.insert</code>——两件事不在同一时刻借用 <code>self.rows</code>。</li>
+<li><strong><code>let mut row = self.rows.remove(self.cy);</code></strong>：连接行的关键。先把当前行从 <code>Vec</code> 里拿掉
+  （<code>remove</code> 返回<strong>拥有</strong>的 <code>Row</code>），它就不再是 <code>self.rows</code> 的一部分，
+  于是可以放心地同时持有「上一行的可变借用」和「这一行」。</li>
+<li><strong>按键 match 的顺序</strong>：带 guard 的 <code>Char('q')</code> / <code>Char('s')</code> 必须排在通用 <code>Char(ch)</code> 之前，
+  否则 <kbd>Ctrl</kbd>+<kbd>S</kbd> 会先被当成「插入字符 s」；通用 <code>Char(ch)</code> 再加 <code>!ctrl</code> 守卫，
+  让其它 Ctrl 组合键被忽略而不是插入字母。</li>
+<li><strong>把 <code>ctrl</code> 绑一次</strong>：<code>key.modifiers.contains(KeyModifiers::CONTROL)</code> 在三个 guard 里都要用。
+  同一个决策出现三处，就按 <strong>Rule of Three</strong> 先 <code>let ctrl = …;</code> 绑一次再 match——
+  只算一次，意图也更清楚。（抽成函数也可以，但这里直接绑更省一层间接。）</li>
+<li><strong>状态栏用掉最后一行</strong>：<code>text_height = height - 1</code>，并且 <code>scroll</code> 也用它——
+  正文区域和滚动必须一致，否则光标会跑到状态栏上。</li>
+<li><strong><code>dirty</code> 的读写闭环</strong>：编辑方法置 <code>true</code>，<code>save</code> 置 <code>false</code>，
+  状态栏读它。一个字段「只写不读」在严格 lint 下会报 <code>dead_code</code>——状态栏让这个字段有意义。</li>
+<li><strong>保存的错误用 <code>?</code></strong>：<code>fs::write</code> 可能失败（磁盘满、无权限），
+  <code>save()</code> 返回 <code>io::Result</code>，<code>run</code> 里 <code>editor.save()?</code> 交给 <code>color-eyre</code> 打印。
+  这是 <code>m06</code> 的「可预期的失败 → <code>Result</code> + <code>?</code>」。</li>
+</ul>
+
+<div class="callout">
+<p><span class="tag">反模式提醒</span> 如果你下意识想「那我 <code>clone()</code> 一份不就行了」——先停一下。
+<code>m15-anti-pattern</code> 把「<strong>用 clone 绕过借用检查</strong>」列为头号反模式：它掩盖了真正的所有权问题，
+还白白复制数据。本课两次冲突的解法都是<strong>重新安排所有权</strong>（切出去、取出来），而不是复制。</p>
+</div>
+
+<h2>小测</h2>
+
+<div class="quiz">
+<p class="q">1. 连接两行时，为什么先把当前行 <code>remove</code> 出来？</p>
+<ul>
+<li>避免同时可变借用 <code>self.rows</code> 两次</li>
+<li>因为 <code>Vec</code> 不允许按下标读取元素</li>
+<li>因为 <code>append</code> 只能作用于拥有所有权的行</li>
+<li>为了顺带清空当前行的字符数组</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。<code>remove</code> 返回一个<strong>拥有</strong>的 <code>Row</code>，它脱离了 <code>self.rows</code>，
+所以「上一行的可变借用」和「这一行」可以同时存在。第二条与第四条都是错的，第三条也不是原因——
+<code>append</code> 收 <code>&amp;mut Row</code>，用 <code>&amp;mut</code> 就行。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">2. <kbd>Ctrl</kbd>+<kbd>S</kbd> 的 match 臂为什么必须排在 <code>Char(ch)</code> 之前？</p>
+<ul>
+<li>否则 Ctrl-S 会先被当成「插入字符 s」</li>
+<li>否则编辑器会在保存前多插入一个换行</li>
+<li>否则 <code>save</code> 会拿到错误的文件路径</li>
+<li>否则两个分支都会被执行两次</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。match 从上往下匹配，第一条命中的臂胜出。<code>Char('s')</code> 带 CONTROL guard 更具体，
+必须在前；否则会把 <kbd>Ctrl</kbd>+<kbd>S</kbd> 理解成普通字符并插入 <code>s</code>。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">3. 按 <kbd>Ctrl</kbd>+<kbd>S</kbd> 之后，状态栏的 <code>[modified]</code> 为什么消失？</p>
+<ul>
+<li>保存成功把 <code>dirty</code> 置回了 <code>false</code></li>
+<li>状态栏每帧重新渲染时会自动清空文字</li>
+<li>退出编辑器后状态栏才会刷新标记</li>
+<li>文件名变化导致标记被隐藏</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。<code>save()</code> 在写完文件后执行 <code>self.dirty = false</code>；下一帧状态栏据此不再显示
+<code>[modified]</code>。标记反映的是「缓冲区与磁盘是否一致」。</p>
+</details>
+</div>
+
+<h2>主要资料</h2>
+<ul class="ref-list">
+<li>对应章节：<a href="https://www.flenker.blog/hecto-chapter-5/">hecto 第 5 章 · A Text Editor</a>、
+  <a href="https://viewsourcecode.org/snaptoken/kilo/04.aTextViewer.html">snaptoken 第 4 章</a>（编辑与保存）。</li>
+<li>借用冲突：本课程参考 <em>m03-mutability</em>（E0499 / E0502）；
+  反模式见 <em>m15-anti-pattern</em>（「用 clone 绕过借用检查」）。</li>
+<li>错误处理：<em>m06-error-handling</em>（可预期失败用 <code>Result</code> + <code>?</code>）。</li>
+<li>速查：<a href="../reference/modern-rust-idioms.html">现代 Rust 惯用法</a> ·
+  <a href="../reference/architecture.html">架构与文件结构</a>。</li>
+</ul>
+
+<div class="callout">
+<p><span class="tag">下一课</span> 现在 <code>Editor</code> 同时管着三件事：缓冲区、光标、视口。
+下一课按<strong>接缝</strong>把它拆开——缓冲区独立成 <code>document.rs</code>（域模型），
+渲染抽成 <code>ui.rs</code>（只读 <code>&amp;Editor</code>）。又是一次「行为不变的搬家」。</p>
+</div>
+
+<div class="lesson-nav">
+  <a class="prev" href="0006-chars-vs-columns.html">← 第 6 课 · 字符 ≠ 列</a>
+  <a class="next" href="#">第 8 课 · 拆出 document / ui（待生成）</a>
+</div>
+
+<p class="footer-note">kilo-rs 课程 · Lesson 0007。总目录见 <a href="../index.html">课程目录</a>。</p>
+
+<script src="../assets/prism.min.js" defer></script>
+</body>
+</html>
