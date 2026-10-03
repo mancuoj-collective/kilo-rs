@@ -4,6 +4,7 @@
 //! answers "what is on row N" and "change row N at char C".
 
 use std::io;
+use std::ops::Range;
 
 use crate::row::Row;
 
@@ -49,6 +50,11 @@ impl Document {
         self.filename.as_deref()
     }
 
+    /// Sets the file name (used by "Save as").
+    pub fn set_filename(&mut self, filename: String) {
+        self.filename = Some(filename);
+    }
+
     /// The row at `index`, if it exists.
     #[must_use]
     pub fn row(&self, index: usize) -> Option<&Row> {
@@ -59,6 +65,20 @@ impl Document {
     #[must_use]
     pub fn line_len(&self, cy: usize) -> usize {
         self.rows.get(cy).map_or(0, Row::len)
+    }
+
+    /// Highlights `range` (char indices) as the current search match on `row`.
+    pub fn set_match(&mut self, row: usize, range: Range<usize>) {
+        if let Some(row) = self.rows.get_mut(row) {
+            row.set_match(Some(range));
+        }
+    }
+
+    /// Removes the search highlight from every row.
+    pub fn clear_matches(&mut self) {
+        for row in &mut self.rows {
+            row.set_match(None);
+        }
     }
 
     /// Inserts `ch` at char `cx` of row `cy`. Creates the row when `cy` is past the end.
@@ -121,18 +141,19 @@ impl Document {
         out
     }
 
-    /// Writes the document to its file. Does nothing when there is no file name.
+    /// Writes the document to its file; returns the number of bytes written.
     ///
     /// # Errors
     ///
     /// Returns the underlying I/O error if the file cannot be written.
-    pub fn save(&mut self) -> io::Result<()> {
+    pub fn save(&mut self) -> io::Result<usize> {
         let Some(path) = &self.filename else {
-            return Ok(());
+            return Ok(0);
         };
-        std::fs::write(path, self.serialize())?;
+        let text = self.serialize();
+        std::fs::write(path, &text)?;
         self.dirty = false;
-        Ok(())
+        Ok(text.len())
     }
 }
 

@@ -9,7 +9,7 @@ use std::io::{self, Write};
 use crossterm::{
     cursor::{self, MoveTo},
     queue,
-    style::Print,
+    style::{Attribute, Print, SetAttribute},
     terminal::{Clear, ClearType},
 };
 
@@ -18,7 +18,9 @@ use crate::editor::Editor;
 const NAME: &str = env!("CARGO_PKG_NAME");
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Draws one frame: the buffer, a status line, and the editor cursor.
+/// Draws one frame: the buffer, a status bar, a message bar, and the editor cursor.
+///
+/// The bottom two rows are reserved for the status bar and the message bar.
 ///
 /// # Errors
 ///
@@ -31,7 +33,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub fn draw(editor: &Editor, cols: u16, rows: u16) -> io::Result<()> {
     let width = cols as usize;
     let height = rows as usize;
-    let text_height = height.saturating_sub(1); // keep the bottom row for the status line
+    let text_height = height.saturating_sub(2); // status bar + message bar
 
     let (coloff, rowoff) = editor.viewport();
     let (rx, cy) = editor.cursor();
@@ -43,7 +45,18 @@ pub fn draw(editor: &Editor, cols: u16, rows: u16) -> io::Result<()> {
     for y in 0..text_height {
         let filerow = rowoff + y;
         if let Some(row) = document.row(filerow) {
-            queue!(stdout, Print(row.render_window(coloff, width)))?;
+            for segment in row.render_window(coloff, width) {
+                if segment.matched {
+                    queue!(
+                        stdout,
+                        SetAttribute(Attribute::Reverse),
+                        Print(segment.text),
+                        SetAttribute(Attribute::Reset),
+                    )?;
+                } else {
+                    queue!(stdout, Print(segment.text))?;
+                }
+            }
         } else if document.is_empty() && y == text_height / 3 {
             queue!(stdout, Print(welcome_line(cols)))?;
         } else {
@@ -55,20 +68,8 @@ pub fn draw(editor: &Editor, cols: u16, rows: u16) -> io::Result<()> {
         }
     }
 
-    // Status line on the bottom row.
-    let name = document.filename().unwrap_or("[No Name]");
-    let modified = if document.is_dirty() {
-        "  [modified]"
-    } else {
-        ""
-    };
-    let status = truncate(&format!("{name}{modified}"), cols);
-    queue!(
-        stdout,
-        MoveTo(0, rows.saturating_sub(1)),
-        Clear(ClearType::CurrentLine),
-        Print(status),
-    )?;
+    draw_status_bar(&mut stdout, editor, cols, rows)?;
+    draw_message_bar(&mut stdout, editor, cols, rows)?;
 
     // The viewport guarantees the cursor is on screen, so these conversions can't fail.
     let cursor_col =
@@ -76,6 +77,68 @@ pub fn draw(editor: &Editor, cols: u16, rows: u16) -> io::Result<()> {
     let cursor_row = u16::try_from(cy - rowoff).expect("cursor row should be inside the viewport");
     queue!(stdout, MoveTo(cursor_col, cursor_row), cursor::Show)?;
     stdout.flush()
+}
+
+/// Draws the reverse-video status bar on the second-to-last row.
+fn draw_status_bar(
+    stdout: &mut io::Stdout,
+    editor: &Editor,
+    cols: u16,
+    rows: u16,
+) -> io::Result<()> {
+    let document = editor.document();
+    let (_, cy) = editor.cursor();
+
+    let modified = if document.is_dirty() {
+        " (modified)"
+    } else {
+        ""
+    };
+    let left = truncate(
+        &format!(
+            "{} - {} lines{}",
+            document.filename().unwrap_or("[No Name]"),
+            document.len(),
+            modified
+        ),
+        cols,
+    );
+    let right = truncate(&format!("{}/{}", cy + 1, document.len()), cols);
+
+    let row = rows.saturating_sub(2);
+    queue!(
+        stdout,
+        MoveTo(0, row),
+        SetAttribute(Attribute::Reverse),
+        Clear(ClearType::CurrentLine),
+        Print(left),
+    )?;
+
+    let right_len = u16::try_from(right.chars().count()).expect("status text is clamped to cols");
+    queue!(
+        stdout,
+        MoveTo(cols.saturating_sub(right_len), row),
+        Print(right),
+        SetAttribute(Attribute::Reset),
+    )?;
+    Ok(())
+}
+
+/// Draws the message bar on the bottom row.
+fn draw_message_bar(
+    stdout: &mut io::Stdout,
+    editor: &Editor,
+    cols: u16,
+    rows: u16,
+) -> io::Result<()> {
+    let message = editor.message().unwrap_or("");
+    queue!(
+        stdout,
+        MoveTo(0, rows.saturating_sub(1)),
+        Clear(ClearType::CurrentLine),
+        Print(truncate(message, cols)),
+    )?;
+    Ok(())
 }
 
 /// Truncates text to the terminal width (by chars, not bytes).

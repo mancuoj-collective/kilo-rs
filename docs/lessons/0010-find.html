@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 10 课 · 查找</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>第 10 课 · 查找</h1>
+<p class="lesson-meta">kilo-rs 课程 · Lesson 0010 · 预计 50–60 分钟 · 加功能：实时查找与命中高亮</p>
+
+<p class="lede">编辑器现在能打开、能编辑、能保存。但当一个文件有几百行，想找「那一处文字」时，
+你只能靠肉眼扫。<strong>查找</strong>是编辑器的高频动作：按 <kbd>Ctrl</kbd>+<kbd>F</kbd>，
+在消息栏输入关键字——<strong>边输边跳</strong>、命中处<strong>高亮</strong>；
+<kbd>Enter</kbd> 留下，<kbd>Esc</kbd> 还原。</p>
+
+<div class="win">
+<p><span class="tag">本课成果</span></p>
+<ul>
+<li><kbd>Ctrl</kbd>+<kbd>F</kbd> 打开查找提示，<strong>每敲一个字符</strong>就重新定位到首个匹配并高亮；</li>
+<li><kbd>↓</kbd>/<kbd>→</kbd> 跳到下一个匹配，<kbd>↑</kbd>/<kbd>←</kbd> 跳到上一个，<strong>到末尾会环绕</strong>；</li>
+<li><kbd>Enter</kbd> 保留命中处的光标；<kbd>Esc</kbd> 还原到查找前的位置；</li>
+<li>查找结束自动清除高亮。整个查找只用了现成的消息栏提示，没有新窗口。</li>
+</ul>
+</div>
+
+<h2>思路：命中高亮从哪来？</h2>
+
+<p>在原版 kilo 里，查找不只是「移动光标」，还要把命中的那几个字符<strong>反色显示</strong>。
+这意味着渲染管线要能区分「普通文字」和「命中文字」。我们把这件事拆成两层：</p>
+
+<table>
+<thead><tr><th></th><th>谁知道「哪段命中」</th><th>谁知道「命中长什么样」</th></tr></thead>
+<tbody>
+<tr><td><code>Row</code></td><td>它持有字符和命中的字符区间（<code>match_range</code>）</td><td>不知道——只标记「这段是命中」</td></tr>
+<tr><td><code>ui</code></td><td>不知道</td><td>它把命中段套上反显（<code>Reverse</code>）</td></tr>
+</tbody>
+</table>
+
+<p>于是 <code>Row::render_window</code> 不再返回一个 <code>String</code>，而是返回一串
+<strong><code>Segment</code></strong>：文本 + 「是否命中」。谁也不想把终端的转义码写进 <code>Row</code>——
+那是渲染层的语言。</p>
+
+<h2>动手</h2>
+
+<div class="task">
+<p><span class="tag">任务 1</span> 改 <code>src/row.rs</code>：分段渲染 + 查找</p>
+<p>先加两样东西——一个「渲染片段」类型，和一个「命中区间」字段：</p>
+<pre><code class="language-rust">/// A run of rendered text, plus whether it belongs to the current search match.
+pub struct Segment {
+    /// Text to print (tabs expanded; wide chars padded at the window edges).
+    pub text: String,
+    /// Whether this run is part of the current search match.
+    pub matched: bool,
+}
+
+/// A single line of text.
+pub struct Row {
+    chars: Vec<char>,
+    /// Char range of the current search match, if any.
+    match_range: Option&lt;Range&lt;usize&gt;&gt;,
+}</code></pre>
+<p>顶部加 <code>use std::ops::Range;</code>；<code>new</code> 里补上 <code>match_range: None</code>，
+<code>split_off</code> 返回的新行同样写 <code>match_range: None</code>。再加查找与标记：</p>
+<pre><code class="language-rust">    /// Index of the first occurrence of `query` at or after char index `from`.
+    #[must_use]
+    pub fn find(&amp;self, query: &amp;str, from: usize) -&gt; Option&lt;usize&gt; {
+        let needle: Vec&lt;char&gt; = query.chars().collect();
+        if needle.is_empty() || from &gt; self.chars.len() {
+            return None;
+        }
+
+        let haystack = &amp;self.chars[from..];
+        if needle.len() &gt; haystack.len() {
+            return None;
+        }
+
+        (0..=haystack.len() - needle.len())
+            .find(|&amp;i| haystack[i..i + needle.len()] == needle[..])
+            .map(|i| from + i)
+    }
+
+    /// Marks `range` (char indices) as the current search match; `None` clears it.
+    pub fn set_match(&amp;mut self, range: Option&lt;Range&lt;usize&gt;&gt;) {
+        self.match_range = range;
+    }</code></pre>
+<p>把 <code>render_window</code> 改成<strong>返回分段</strong>，并加一个小工具把相邻同类段并起来：</p>
+<pre><code class="language-rust">    /// Returns display columns `[coloff, coloff + width)`, split into highlighted and plain runs.
+    #[must_use]
+    pub fn render_window(&amp;self, coloff: usize, width: usize) -&gt; Vec&lt;Segment&gt; {
+        let mut segments = Vec::new();
+        let end = coloff + width;
+        let mut col = 0;
+
+        for (index, &amp;ch) in self.chars.iter().enumerate() {
+            let start = col;
+            col = advance(col, ch);
+
+            if col &lt;= coloff {
+                continue; // entirely left of the window
+            }
+            if start &gt;= end {
+                break; // window is full
+            }
+
+            let matched = self
+                .match_range
+                .as_ref()
+                .is_some_and(|range| range.contains(&amp;index));
+
+            if ch == '\t' || start &lt; coloff || col &gt; end {
+                // Expand tabs to spaces; pad a wide char straddling the edge with spaces.
+                let from = start.max(coloff);
+                let to = col.min(end);
+                push_segment(&amp;mut segments, &amp;" ".repeat(to - from), matched);
+            } else {
+                let mut buf = [0u8; 4];
+                push_segment(&amp;mut segments, ch.encode_utf8(&amp;mut buf), matched);
+            }
+        }
+
+        segments
+    }
+}
+
+/// Appends `text` to `segments`, merging it into the previous run when the match flag agrees.
+fn push_segment(segments: &amp;mut Vec&lt;Segment&gt;, text: &amp;str, matched: bool) {
+    if text.is_empty() {
+        return;
+    }
+    match segments.last_mut() {
+        Some(last) if last.matched == matched =&gt; last.text.push_str(text),
+        _ =&gt; segments.push(Segment {
+            text: text.to_owned(),
+            matched,
+        }),
+    }
+}</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 2</span> 改 <code>src/document.rs</code>：转发高亮</p>
+<p>顶部加 <code>use std::ops::Range;</code>，并在 <code>impl Document</code> 里加两个方法：</p>
+<pre><code class="language-rust">    /// Highlights `range` (char indices) as the current search match on `row`.
+    pub fn set_match(&amp;mut self, row: usize, range: Range&lt;usize&gt;) {
+        if let Some(row) = self.rows.get_mut(row) {
+            row.set_match(Some(range));
+        }
+    }
+
+    /// Removes the search highlight from every row.
+    pub fn clear_matches(&amp;mut self) {
+        for row in &amp;mut self.rows {
+            row.set_match(None);
+        }
+    }</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 3</span> 改 <code>src/editor.rs</code>：查找状态与逻辑</p>
+<p>先加三个类型：一个「怎么走」的枚举、一个不透明的「视口快照」，以及新增字段。</p>
+<pre><code class="language-rust">/// How [`Editor::find`] should step through matches.
+#[derive(Clone, Copy)]
+pub enum Find {
+    /// The query changed: start again from the first row.
+    FromStart,
+    /// Move to the next match.
+    Next,
+    /// Move to the previous match.
+    Prev,
+}
+
+/// A snapshot of the cursor and viewport; a cancelled search restores it.
+#[derive(Clone, Copy)]
+pub struct ViewState {
+    cx: usize,
+    cy: usize,
+    coloff: usize,
+    rowoff: usize,
+}</code></pre>
+<p>在 <code>Editor</code> 的 <code>message</code> 字段后加一行，并在 <code>new</code> 里写 <code>last_match: None</code>：</p>
+<pre><code class="language-rust">    /// Row of the current search match, so `Next` / `Prev` can step from it.
+    last_match: Option&lt;usize&gt;,</code></pre>
+<p>加入快照、清除高亮、以及查找本体：</p>
+<pre><code class="language-rust">    /// Captures the cursor and viewport; a cancelled search restores them.
+    #[must_use]
+    pub fn view_state(&amp;self) -&gt; ViewState {
+        ViewState {
+            cx: self.cx,
+            cy: self.cy,
+            coloff: self.coloff,
+            rowoff: self.rowoff,
+        }
+    }
+
+    /// Restores a snapshot taken by [`Editor::view_state`].
+    pub fn restore_view(&amp;mut self, view: ViewState) {
+        self.cx = view.cx;
+        self.cy = view.cy;
+        self.coloff = view.coloff;
+        self.rowoff = view.rowoff;
+    }
+
+    /// Removes the current search highlight.
+    pub fn clear_matches(&amp;mut self) {
+        self.document.clear_matches();
+    }
+
+    /// Searches for `query`, moving the cursor to the match and wrapping around.
+    pub fn find(&amp;mut self, query: &amp;str, how: Find) {
+        self.document.clear_matches();
+        if query.is_empty() {
+            self.last_match = None;
+            return;
+        }
+
+        let count = self.document.len();
+        if count == 0 {
+            self.last_match = None;
+            return;
+        }
+
+        let start = match how {
+            Find::FromStart =&gt; 0,
+            Find::Next =&gt; self.last_match.map_or(0, |row| (row + 1) % count),
+            Find::Prev =&gt; self
+                .last_match
+                .map_or(count - 1, |row| (row + count - 1) % count),
+        };
+
+        for offset in 0..count {
+            let row = match how {
+                Find::Prev =&gt; (start + count - offset) % count,
+                Find::FromStart | Find::Next =&gt; (start + offset) % count,
+            };
+            if let Some(col) = self.document.row(row).and_then(|line| line.find(query, 0)) {
+                self.last_match = Some(row);
+                self.cx = col;
+                self.cy = row;
+                self.document
+                    .set_match(row, col..col + query.chars().count());
+                return;
+            }
+        }
+        self.last_match = None;
+    }</code></pre>
+<p>补两个测试（<code>render_window</code> 的既有测试也要适配新返回类型，把分段拼回文本即可）：</p>
+<pre><code class="language-rust">    #[test]
+    fn find_moves_to_the_match_and_wraps() {
+        let lines = [
+            String::from("one"),
+            String::from("two one"),
+            String::from("three"),
+        ];
+        let mut e = Editor::new(&amp;lines, None);
+
+        e.find("one", Find::FromStart);
+        assert_eq!(e.cursor(), (0, 0));
+        e.find("one", Find::Next);
+        assert_eq!(e.cursor(), (4, 1));
+        e.find("one", Find::Next); // wraps back to the first row
+        assert_eq!(e.cursor(), (0, 0));
+        e.find("one", Find::Prev); // and backwards to the last match
+        assert_eq!(e.cursor(), (4, 1));
+    }
+
+    #[test]
+    fn restore_view_puts_the_cursor_back() {
+        let mut e = editor();
+        let saved = e.view_state();
+        e.find("world", Find::FromStart);
+        assert_eq!(e.cursor(), (0, 1));
+        e.restore_view(saved);
+        assert_eq!(e.cursor(), (0, 0));
+    }</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 4</span> 改 <code>src/ui.rs</code>：逐段打印</p>
+<p>把原来「打印整行」的那一句，换成分段循环——命中段套上反显，打完立刻复位：</p>
+<pre><code class="language-rust">        if let Some(row) = document.row(filerow) {
+            for segment in row.render_window(coloff, width) {
+                if segment.matched {
+                    queue!(
+                        stdout,
+                        SetAttribute(Attribute::Reverse),
+                        Print(segment.text),
+                        SetAttribute(Attribute::Reset),
+                    )?;
+                } else {
+                    queue!(stdout, Print(segment.text))?;
+                }
+            }
+        } else if document.is_empty() &amp;&amp; y == text_height / 3 {</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 5</span> 改 <code>src/lib.rs</code>：Ctrl-F 与「实时」提示</p>
+<p>导入 <code>Find</code>，更新帮助文案，并加一个按键分支：</p>
+<pre><code class="language-rust">use crate::{
+    editor::{Editor, Find, Move},
+    tui::Terminal,
+};</code></pre>
+<pre><code class="language-rust">    editor.set_message("HELP: Ctrl-S = save | Ctrl-F = find | Ctrl-Q = quit");</code></pre>
+<pre><code class="language-rust">        KeyCode::Char('f') if ctrl =&gt; find(editor)?,</code></pre>
+<p>查找函数本身很短：拍下快照 → 让提示循环带回调 → 结束后清高亮，<kbd>Esc</kbd> 才还原：</p>
+<pre><code class="language-rust">/// Ctrl-F: live search; `Esc` restores the cursor, `Enter` keeps it.
+fn find(editor: &amp;mut Editor) -&gt; io::Result&lt;()&gt; {
+    let saved = editor.view_state();
+    let query = prompt_with(editor, "Search: ", |editor, query, key| match key {
+        KeyCode::Enter | KeyCode::Esc =&gt; {}
+        KeyCode::Up | KeyCode::Left =&gt; editor.find(query, Find::Prev),
+        KeyCode::Down | KeyCode::Right =&gt; editor.find(query, Find::Next),
+        _ =&gt; editor.find(query, Find::FromStart),
+    })?;
+    editor.clear_matches();
+    if query.is_none() {
+        editor.restore_view(saved);
+    }
+    Ok(())
+}</code></pre>
+<p>把原来的 <code>prompt</code> 泛化：<code>prompt</code> 只是「空回调」的特例，真正干活的是
+<code>prompt_with</code>——它每按一键都回调一次：</p>
+<pre><code class="language-rust">/// Reads a line from the message bar. `Esc` cancels, `Enter` confirms.
+fn prompt(editor: &amp;mut Editor, label: &amp;str) -&gt; io::Result&lt;Option&lt;String&gt;&gt; {
+    prompt_with(editor, label, |_, _, _| {})
+}
+
+/// Like [`prompt`], but calls `on_key` after every key press (used by live search).
+fn prompt_with(
+    editor: &amp;mut Editor,
+    label: &amp;str,
+    mut on_key: impl FnMut(&amp;mut Editor, &amp;str, KeyCode),
+) -&gt; io::Result&lt;Option&lt;String&gt;&gt; {
+    let mut input = String::new();
+    loop {
+        editor.set_message(format!("{label}{input}"));
+        render(editor)?;
+
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
+        if !key.is_press() {
+            continue;
+        }
+
+        match key.code {
+            KeyCode::Esc =&gt; {
+                on_key(editor, &amp;input, KeyCode::Esc);
+                editor.clear_message();
+                return Ok(None);
+            }
+            KeyCode::Enter =&gt; {
+                if !input.is_empty() {
+                    on_key(editor, &amp;input, KeyCode::Enter);
+                    editor.clear_message();
+                    return Ok(Some(input));
+                }
+            }
+            KeyCode::Backspace =&gt; {
+                input.pop();
+            }
+            KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) =&gt; input.push(ch),
+            _ =&gt; {}
+        }
+        on_key(editor, &amp;input, key.code);
+    }
+}</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 6</span> 运行 + 测试 + clippy</p>
+<pre><code class="language-bash">cargo run -- t.txt      # 按 Ctrl-F，输入关键字，看光标与高亮跟着走
+cargo test              # 21 个单元测试
+cargo clippy --all-targets -- -D warnings
+cargo fmt</code></pre>
+</div>
+
+<h2>逐段拆解</h2>
+
+<ul>
+<li><strong>为什么 <code>Row</code> 返回「分段」而不是一个字符串？</strong>
+  「哪一段命中」只有 <code>Row</code> 说得清（它持有字符和命中区间）；「命中长什么样」属于渲染层。
+  把这两件事分开，<code>Row</code> 里就不会出现终端转义码，<code>ui</code> 也不必懂字符坐标。</li>
+<li><strong><code>push_segment</code> 合并同类段</strong>：相邻且 <code>matched</code> 相同的文本并成一段，
+  减少无谓的 <code>SetAttribute</code>，也让「边界」在测试里一眼看清（<code>hello </code> 普通 / <code>world</code> 命中）。</li>
+<li><strong><code>is_some_and</code></strong>：<code>Option</code> 上的「有值且满足谓词」，比
+  <code>map_or(false, …)</code> 或手写 <code>match</code> 更直达意图。</li>
+<li><strong><code>prompt</code> / <code>prompt_with</code></strong>：前者是后者的空回调特例。
+  查找传入的回调<strong>每按一键都调用</strong>，于是「输入」与「重找」同步发生——这就是实时搜索。</li>
+<li><strong>环绕靠取模</strong>：<code>Next</code> 从 <code>last_match + 1</code> 起、<code>Prev</code> 从
+  <code>last_match - 1</code> 起，用 <code>% count</code> 回绕；查到就记下新的 <code>last_match</code>。
+  <code>FromStart</code> 一律从第 0 行起（查询变了，重新找首个匹配）。</li>
+<li><strong><kbd>Esc</kbd> 还原靠快照</strong>：查找前 <code>view_state()</code> 拍下
+  <code>cx/cy/coloff/rowoff</code>；取消时 <code>restore_view()</code> 放回。
+  <kbd>Enter</kbd> 不还原——因为你就是想停在命中处。</li>
+<li><strong>命中按「字符下标」而非「显示列」</strong>：<code>cx</code> 本就是字符下标，
+  高亮也按字符区间记；显示列只在渲染那一刻换算（tab 展开、宽字符占两列）。</li>
+</ul>
+
+<h2>小测</h2>
+
+<div class="quiz">
+<p class="q">1. <code>render_window</code> 为什么返回 <code>Vec&lt;Segment&gt;</code>，而不是一个带 ANSI 的字符串？</p>
+<ul>
+<li>让 <code>Row</code> 只描述「哪段命中」，样式由 <code>ui</code> 决定</li>
+<li>因为 <code>String</code> 里不能存放反显控制码</li>
+<li>因为分段比字符串更省内存</li>
+<li>为了支持同时高亮多行</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。分层：<code>Row</code> 决定命中区间，<code>ui</code> 决定用反显还是别的样式。
+这样 <code>Row</code> 与终端无关，可单独测试。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">2. <kbd>Esc</kbd> 要能还原，需要在查找前保存哪些状态？</p>
+<ul>
+<li>光标 <code>cx/cy</code> 与视口 <code>coloff/rowoff</code> 四处</li>
+<li>只保存当前文件名</li>
+<li>整份文档内容</li>
+<li>只需要查询字符串</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。查找会同时改动光标和滚动位置，所以两样都要拍快照；文档内容没被改动，
+查询本身也无需保存。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">3. 「到末尾环绕到开头」靠什么实现？</p>
+<ul>
+<li>对行数取模，从 <code>last_match</code> 前后推进</li>
+<li>先复制一份文档再从头搜</li>
+<li>用递归把每一行都试一遍</li>
+<li>依靠终端自身的滚动能力</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。<code>(start + offset) % count</code>（向前）与
+<code>(start + count - offset) % count</code>（向后）天然回绕，最多扫描 <code>count</code> 行。</p>
+</details>
+</div>
+
+<h2>主要资料</h2>
+<ul class="ref-list">
+<li>对应章节：<a href="https://viewsourcecode.org/snaptoken/kilo/06.search.html">snaptoken 第 6 章</a>
+  （<code>editorFind</code> / <code>editorFindCallback</code> / <code>HL_MATCH</code>）。</li>
+<li>泛型与闭包：<em>m04-zero-cost</em>（<code>impl FnMut</code>、把行为作为参数传入）。</li>
+<li>速查：<a href="../reference/modern-rust-idioms.html">现代 Rust 惯用法</a>
+  （<code>let-else</code>、<code>Option</code> 组合子）。</li>
+</ul>
+
+<div class="callout">
+<p><span class="tag">下一课</span> 查找只高亮「命中」。下一步是让<strong>代码本身</strong>有颜色：
+  新建 <code>syntax.rs</code>，用规则表 + 状态机识别注释、字符串、数字与关键字——
+  <code>Row</code> 的「分段」正好还能装下每种语法类别。</p>
+</div>
+
+<div class="lesson-nav">
+  <a class="prev" href="0009-status-and-message-bar.html">← 第 9 课 · 状态栏与消息栏</a>
+  <a class="next" href="#">第 11 课 · 语法高亮（待生成）</a>
+</div>
+
+<p class="footer-note">kilo-rs 课程 · Lesson 0010。总目录见 <a href="../index.html">课程目录</a>。</p>
+
+<script src="../assets/prism.min.js" defer></script>
+</body>
+</html>

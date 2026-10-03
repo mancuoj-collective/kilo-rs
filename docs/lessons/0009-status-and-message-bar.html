@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 9 课 · 状态栏与消息栏</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>第 9 课 · 状态栏与消息栏</h1>
+<p class="lesson-meta">kilo-rs 课程 · Lesson 0009 · 预计 40–50 分钟 · 加功能：反馈、提示、保护</p>
+
+<p class="lede">到目前为止，编辑器几乎不给你任何反馈：存了没存、有没有改动、写没写成功，全靠猜。
+这一课补上<strong>两条底栏</strong>——常驻的<strong>状态栏</strong>和临时的<strong>消息栏</strong>，
+并用它们实现「另存为」提示与「未保存退出」保护。</p>
+
+<div class="win">
+<p><span class="tag">本课成果</span></p>
+<ul>
+<li>底部两行：<strong>状态栏</strong>（文件名、行数、<code>(modified)</code>、行/总行）与<strong>消息栏</strong>；</li>
+<li>不带文件名时按 <kbd>Ctrl</kbd>+<kbd>S</kbd> → 底部出现 <code>Save as:</code> 提示，输入文件名并回车即保存；</li>
+<li>保存后提示 <code>N bytes written to disk</code>；</li>
+<li>有未保存改动时按 <kbd>Ctrl</kbd>+<kbd>Q</kbd> 会警告，需连按 3 次才退出。</li>
+</ul>
+</div>
+
+<h2>两块底栏，两种生命</h2>
+
+<table>
+<thead><tr><th></th><th>状态栏</th><th>消息栏</th></tr></thead>
+<tbody>
+<tr><td>位置</td><td>倒数第二行</td><td>最底行</td></tr>
+<tr><td>内容</td><td>文件名、行数、是否改动、行/总行</td><td>一条临时消息</td></tr>
+<tr><td>生命</td><td>常驻，随时反映当前状态</td><td>出现后约 <strong>5 秒</strong>淡出</td></tr>
+<tr><td>样式</td><td>反显（<code>Reverse</code>）以区分正文</td><td>普通文本</td></tr>
+</tbody>
+</table>
+
+<p>消息的「5 秒」是把<strong>时间当作状态</strong>：记下消息出现的那一刻（<code>Instant</code>），
+渲染时判断「距现在是否超过 5 秒」。这也是原版 kilo 的做法。</p>
+
+<h2>动手</h2>
+
+<div class="task">
+<p><span class="tag">任务 1</span> 改 <code>src/document.rs</code></p>
+<p>把 <code>save</code> 改成<strong>返回写入字节数</strong>，并加一个设置文件名的方法：</p>
+<pre><code class="language-rust">    /// Sets the file name (used by "Save as").
+    pub fn set_filename(&amp;mut self, filename: String) {
+        self.filename = Some(filename);
+    }
+
+    /// Writes the document to its file; returns the number of bytes written.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying I/O error if the file cannot be written.
+    pub fn save(&amp;mut self) -&gt; io::Result&lt;usize&gt; {
+        let Some(path) = &amp;self.filename else {
+            return Ok(0);
+        };
+        let text = self.serialize();
+        std::fs::write(path, &amp;text)?;
+        self.dirty = false;
+        Ok(text.len())
+    }</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 2</span> 给 <code>src/editor.rs</code> 加上「消息」状态</p>
+<pre><code class="language-rust">use std::io;
+use std::time::{Duration, Instant};
+
+/// How long a status message stays on screen.
+const MESSAGE_TTL: Duration = Duration::from_secs(5);
+
+/// A transient status message and when it was set.
+struct Message {
+    text: String,
+    shown_at: Instant,
+}</code></pre>
+<p>在 <code>Editor</code> 里加一个字段（放在 <code>document</code> 之后）：</p>
+<pre><code class="language-rust">    message: Option&lt;Message&gt;,</code></pre>
+<p><code>new</code> 里初始化为 <code>message: None</code>，并加入这些方法（其余不变）：</p>
+<pre><code class="language-rust">    /// Sets the status message shown in the message bar.
+    pub fn set_message(&amp;mut self, text: impl Into&lt;String&gt;) {
+        self.message = Some(Message {
+            text: text.into(),
+            shown_at: Instant::now(),
+        });
+    }
+
+    /// Clears the status message.
+    pub fn clear_message(&amp;mut self) {
+        self.message = None;
+    }
+
+    /// The status message, if it was set within the last [`MESSAGE_TTL`].
+    #[must_use]
+    pub fn message(&amp;self) -&gt; Option&lt;&amp;str&gt; {
+        self.message
+            .as_ref()
+            .filter(|m| m.shown_at.elapsed() &lt; MESSAGE_TTL)
+            .map(|m| m.text.as_str())
+    }
+
+    /// Sets the file name (used by "Save as").
+    pub fn set_filename(&amp;mut self, filename: String) {
+        self.document.set_filename(filename);
+    }</code></pre>
+<p><code>save</code> 的返回类型改成 <code>io::Result&lt;usize&gt;</code>（直接转调 <code>document.save()</code>）。再加一个测试：</p>
+<pre><code class="language-rust">    #[test]
+    fn message_is_readable_until_cleared() {
+        let mut e = editor();
+        assert_eq!(e.message(), None);
+        e.set_message("saved");
+        assert_eq!(e.message(), Some("saved"));
+        e.clear_message();
+        assert_eq!(e.message(), None);
+    }</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 3</span> 改 <code>src/ui.rs</code>：画两块底栏</p>
+<pre><code class="language-rust">//! Rendering: turn the editor state into terminal output.
+
+use std::io::{self, Write};
+
+use crossterm::{
+    cursor::{self, MoveTo},
+    queue,
+    style::{Attribute, Print, SetAttribute},
+    terminal::{Clear, ClearType},
+};
+
+use crate::editor::Editor;
+
+const NAME: &amp;str = env!("CARGO_PKG_NAME");
+const VERSION: &amp;str = env!("CARGO_PKG_VERSION");
+
+/// Draws one frame: the buffer, a status bar, a message bar, and the editor cursor.
+///
+/// # Errors
+///
+/// Returns the underlying I/O error if writing to the terminal fails.
+///
+/// # Panics
+///
+/// Panics if the cursor is outside the viewport — an invariant that [`Editor::scroll`]
+/// maintains, so the caller must run it before drawing.
+pub fn draw(editor: &amp;Editor, cols: u16, rows: u16) -&gt; io::Result&lt;()&gt; {
+    let width = cols as usize;
+    let height = rows as usize;
+    let text_height = height.saturating_sub(2); // status bar + message bar
+
+    let (coloff, rowoff) = editor.viewport();
+    let (rx, cy) = editor.cursor();
+    let document = editor.document();
+
+    let mut stdout = io::stdout();
+    queue!(stdout, cursor::Hide, Clear(ClearType::All), MoveTo(0, 0))?;
+
+    for y in 0..text_height {
+        let filerow = rowoff + y;
+        if let Some(row) = document.row(filerow) {
+            queue!(stdout, Print(row.render_window(coloff, width)))?;
+        } else if document.is_empty() &amp;&amp; y == text_height / 3 {
+            queue!(stdout, Print(welcome_line(cols)))?;
+        } else {
+            queue!(stdout, Print('~'))?;
+        }
+
+        if y + 1 &lt; height {
+            queue!(stdout, Print("\r\n"))?;
+        }
+    }
+
+    draw_status_bar(&amp;mut stdout, editor, cols, rows)?;
+    draw_message_bar(&amp;mut stdout, editor, cols, rows)?;
+
+    let cursor_col =
+        u16::try_from(rx - coloff).expect("cursor column should be inside the viewport");
+    let cursor_row = u16::try_from(cy - rowoff).expect("cursor row should be inside the viewport");
+    queue!(stdout, MoveTo(cursor_col, cursor_row), cursor::Show)?;
+    stdout.flush()
+}
+
+/// Draws the reverse-video status bar on the second-to-last row.
+fn draw_status_bar(
+    stdout: &amp;mut io::Stdout,
+    editor: &amp;Editor,
+    cols: u16,
+    rows: u16,
+) -&gt; io::Result&lt;()&gt; {
+    let document = editor.document();
+    let (_, cy) = editor.cursor();
+
+    let modified = if document.is_dirty() {
+        " (modified)"
+    } else {
+        ""
+    };
+    let left = truncate(
+        &amp;format!(
+            "{} - {} lines{}",
+            document.filename().unwrap_or("[No Name]"),
+            document.len(),
+            modified
+        ),
+        cols,
+    );
+    let right = truncate(&amp;format!("{}/{}", cy + 1, document.len()), cols);
+
+    let row = rows.saturating_sub(2);
+    queue!(
+        stdout,
+        MoveTo(0, row),
+        SetAttribute(Attribute::Reverse),
+        Clear(ClearType::CurrentLine),
+        Print(left),
+    )?;
+
+    let right_len = u16::try_from(right.chars().count()).expect("status text is clamped to cols");
+    queue!(
+        stdout,
+        MoveTo(cols.saturating_sub(right_len), row),
+        Print(right),
+        SetAttribute(Attribute::Reset),
+    )?;
+    Ok(())
+}
+
+/// Draws the message bar on the bottom row.
+fn draw_message_bar(
+    stdout: &amp;mut io::Stdout,
+    editor: &amp;Editor,
+    cols: u16,
+    rows: u16,
+) -&gt; io::Result&lt;()&gt; {
+    let message = editor.message().unwrap_or("");
+    queue!(
+        stdout,
+        MoveTo(0, rows.saturating_sub(1)),
+        Clear(ClearType::CurrentLine),
+        Print(truncate(message, cols)),
+    )?;
+    Ok(())
+}
+
+/// Truncates text to the terminal width (by chars, not bytes).
+fn truncate(text: &amp;str, width: u16) -&gt; String {
+    text.chars().take(width as usize).collect()
+}
+
+fn welcome_line(cols: u16) -&gt; String {
+    let text = format!("~ {NAME} editor -- version {VERSION}");
+    truncate(&amp;text, cols)
+}</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 4</span> 改 <code>src/lib.rs</code>：事件循环、提示、退出保护</p>
+<pre><code class="language-rust">pub mod document;
+pub mod editor;
+pub mod row;
+pub mod tui;
+pub mod ui;
+
+use std::{env, fs, io};
+
+use color_eyre::Result;
+use crossterm::{
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    terminal,
+};
+
+use crate::{
+    editor::{Editor, Move},
+    tui::Terminal,
+};
+
+/// Number of Ctrl-Q presses needed to quit with unsaved changes.
+const QUIT_TIMES: u8 = 3;
+
+/// Runs the editor: read the file, take over the terminal, enter the event loop.
+///
+/// # Errors
+///
+/// Returns an error if reading the file or a terminal operation fails.
+pub fn run() -&gt; Result&lt;()&gt; {
+    // Read the file name from argv; with no argument, start with an empty buffer.
+    let path = env::args().nth(1);
+    let lines = match &amp;path {
+        Some(path) =&gt; fs::read_to_string(path)?
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+        None =&gt; Vec::new(),
+    };
+
+    let mut editor = Editor::new(&amp;lines, path);
+    editor.set_message("HELP: Ctrl-S = save | Ctrl-Q = quit");
+
+    let _guard = Terminal::enter()?;
+    render(&amp;mut editor)?;
+
+    let mut quit_times = QUIT_TIMES;
+    loop {
+        let Event::Key(key) = event::read()? else {
+            render(&amp;mut editor)?;
+            continue;
+        };
+        if key.is_press() &amp;&amp; handle_key(&amp;mut editor, key, &amp;mut quit_times)? {
+            break;
+        }
+        render(&amp;mut editor)?;
+    }
+
+    Ok(())
+}
+
+/// Handles one key press. Returns `true` when the editor should quit.
+fn handle_key(editor: &amp;mut Editor, key: KeyEvent, quit_times: &amp;mut u8) -&gt; io::Result&lt;bool&gt; {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    match key.code {
+        KeyCode::Char('q') if ctrl =&gt; {
+            if editor.document().is_dirty() &amp;&amp; *quit_times &gt; 0 {
+                let time = if *quit_times == 1 { "time" } else { "times" };
+                editor.set_message(format!(
+                    "WARNING! Unsaved changes. Press Ctrl-Q {quit_times} more {time} to quit."
+                ));
+                *quit_times -= 1;
+                return Ok(false);
+            }
+            return Ok(true);
+        }
+        KeyCode::Char('s') if ctrl =&gt; save(editor)?,
+        KeyCode::Char(ch) if !ctrl =&gt; editor.insert_char(ch),
+        KeyCode::Enter =&gt; editor.insert_newline(),
+        KeyCode::Backspace | KeyCode::Delete =&gt; editor.delete_char(),
+        KeyCode::Up =&gt; editor.move_cursor(Move::Up),
+        KeyCode::Down =&gt; editor.move_cursor(Move::Down),
+        KeyCode::Left =&gt; editor.move_cursor(Move::Left),
+        KeyCode::Right =&gt; editor.move_cursor(Move::Right),
+        KeyCode::Home =&gt; editor.move_cursor(Move::Home),
+        KeyCode::End =&gt; editor.move_cursor(Move::End),
+        _ =&gt; {}
+    }
+    *quit_times = QUIT_TIMES;
+    Ok(false)
+}
+
+/// Ctrl-S: prompt for a file name when needed, then write the file.
+fn save(editor: &amp;mut Editor) -&gt; io::Result&lt;()&gt; {
+    if editor.document().filename().is_none() {
+        let Some(name) = prompt(editor, "Save as: ")? else {
+            editor.set_message("Save aborted");
+            return Ok(());
+        };
+        editor.set_filename(name);
+    }
+    let bytes = editor.save()?;
+    editor.set_message(format!("{bytes} bytes written to disk"));
+    Ok(())
+}
+
+/// Reads a line from the message bar. `Esc` cancels, `Enter` confirms.
+fn prompt(editor: &amp;mut Editor, label: &amp;str) -&gt; io::Result&lt;Option&lt;String&gt;&gt; {
+    let mut input = String::new();
+    loop {
+        editor.set_message(format!("{label}{input}"));
+        render(editor)?;
+
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
+        if !key.is_press() {
+            continue;
+        }
+
+        match key.code {
+            KeyCode::Esc =&gt; {
+                editor.clear_message();
+                return Ok(None);
+            }
+            KeyCode::Enter =&gt; {
+                if !input.is_empty() {
+                    editor.clear_message();
+                    return Ok(Some(input));
+                }
+            }
+            KeyCode::Backspace =&gt; {
+                input.pop();
+            }
+            KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) =&gt; input.push(ch),
+            _ =&gt; {}
+        }
+    }
+}
+
+/// Scrolls the viewport to the current terminal size, then draws one frame.
+fn render(editor: &amp;mut Editor) -&gt; io::Result&lt;()&gt; {
+    let (cols, rows) = terminal::size()?;
+    let text_height = (rows as usize).saturating_sub(2);
+    editor.scroll(text_height, cols as usize);
+    ui::draw(editor, cols, rows)
+}</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 5</span> 运行 + 测试 + clippy</p>
+<pre><code class="language-bash">cargo run                 # 不带文件：敲字，Ctrl-S 会提示 Save as:
+cargo run -- t.txt        # 打开文件：改一下，Ctrl-Q 会警告需按 3 次
+cargo test                # 16 个单元测试
+cargo clippy --all-targets -- -D warnings
+cargo fmt</code></pre>
+</div>
+
+<h2>逐段拆解</h2>
+
+<ul>
+<li><strong>状态栏用反显 + 整行清空</strong>：<code>SetAttribute(Attribute::Reverse)</code> 把这一行反色，
+  <code>Clear(ClearType::CurrentLine)</code> 用当前（反显）背景铺满整行，右侧再 <code>MoveTo</code> 到
+  <code>cols - right_len</code> 打印右半段。<strong>清除 + 反显</strong> 一起用，才有「一条栏」的样子。</li>
+<li><strong>消息用 <code>Instant</code> 记时间</strong>：<code>set_message</code> 记录 <code>Instant::now()</code>，
+  <code>message()</code> 判断 <code>elapsed() &lt; MESSAGE_TTL</code>。注意这是<strong>惰性过期</strong>——
+  只有在重画那一帧才判断，没有事件就不会重画（原版 kilo 同样如此）。</li>
+<li><strong><code>prompt</code> 是可复用的输入循环</strong>：每轮 <code>set_message</code>（顺带把 TTL 复位）
+  → <code>render</code> → 读一个按键。<kbd>Esc</kbd> 取消、<kbd>Enter</kbd> 确认、<kbd>Backspace</kbd> 退格。
+  以后的「查找」（Ctrl-F）会复用它。</li>
+<li><strong>事件循环改用 <code>let … else</code></strong>：原先是 <code>match</code> 里套一个 <code>if</code>，
+  <code>clippy::collapsible_match</code> 提示「外层 match 可以塌缩」。改成
+  <code>let Event::Key(key) = … else { … continue }</code>，非按键事件先重画再跳过——更直白。</li>
+<li><strong><code>save</code> 用 <code>let … else</code></strong>：<code>clippy::single_match</code> 提示
+  「只为解构一个模式」。<code>let Some(name) = prompt(...)? else { … }</code> 正好表达「拿不到文件名就走人」。</li>
+<li><strong><code>quit_times</code> 的重置位置很关键</strong>：<strong>只</strong>在 <code>handle_key</code> 正常走到底时重置；
+  <kbd>Ctrl</kbd>+<kbd>Q</kbd> 的警告路径 <code>return</code> 提前，<strong>不会</strong>被重置——
+  所以连按才会累积。<kbd>Ctrl</kbd>+<kbd>Q</kbd> 之后按任何别的键，计数清零（回到 3 次）。</li>
+</ul>
+
+<h2>小测</h2>
+
+<div class="quiz">
+<p class="q">1. 消息为什么用 <code>Instant</code> + 时限，而不是「下一帧就清空」？</p>
+<ul>
+<li>好让消息保持约 5 秒而非一闪而过</li>
+<li>因为清空消息需要重新分配内存</li>
+<li>因为 <code>Instant</code> 能记录消息的字节数</li>
+<li>为了让消息永不消失</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。消息要在屏幕上停留一小段时间才看得清；用「设置时刻 + 时限」来判定，
+渲染时过期就不再显示。这也是原版 kilo 的做法。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">2. <code>prompt</code> 里每次循环都调用 <code>set_message</code>，为什么？</p>
+<ul>
+<li>既刷新输入内容，又把消息时限复位</li>
+<li>因为 <code>set_message</code> 会读取下一个按键</li>
+<li>为了让光标移动到消息栏</li>
+<li>因为它会自动清空终端的屏幕</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。每敲一个键都要把「提示标签 + 当前输入」写进消息栏；同时重置出现时刻，
+避免提示在等待输入时被时限判为过期。<code>set_message</code> 本身不读键、不清屏。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">3. <kbd>Ctrl</kbd>+<kbd>Q</kbd> 的警告路径为什么不能被 <code>quit_times</code> 重置？</p>
+<ul>
+<li>重置了计数就永远凑不满三次</li>
+<li>重置会导致文件被自动保存</li>
+<li>重置会让消息栏被立刻清空</li>
+<li>重置会触发一次多余的屏幕重画</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。重置发生在「正常处理完一个按键之后」；警告路径提前 <code>return</code>，跳过重置，
+计数才能连续递减到 0 从而真正退出。</p>
+</details>
+</div>
+
+<h2>主要资料</h2>
+<ul class="ref-list">
+<li>对应章节：<a href="https://viewsourcecode.org/snaptoken/kilo/04.aTextViewer.html">snaptoken 第 4 章</a>
+  （<code>editorDrawStatusBar</code> / <code>editorDrawMessageBar</code> / <code>editorPrompt</code>）。</li>
+<li>错误处理与反馈：<em>m06-error-handling</em>（把可预期的失败变成消息而非 panic）。</li>
+<li>速查：<a href="../reference/modern-rust-idioms.html">现代 Rust 惯用法</a>（<code>let-else</code> 一节）。</li>
+</ul>
+
+<div class="callout">
+<p><span class="tag">下一课</span> 有了可复用的 <code>prompt</code>，<strong>查找</strong>（Ctrl-F）几乎是顺手：
+  在消息栏输入关键字、定位到匹配行，并高亮命中。</p>
+</div>
+
+<div class="lesson-nav">
+  <a class="prev" href="0008-document-and-ui.html">← 第 8 课 · 拆出 document 与 ui</a>
+  <a class="next" href="0010-find.html">第 10 课 · 查找 →</a>
+</div>
+
+<p class="footer-note">kilo-rs 课程 · Lesson 0009。总目录见 <a href="../index.html">课程目录</a>。</p>
+
+<script src="../assets/prism.min.js" defer></script>
+</body>
+</html>
