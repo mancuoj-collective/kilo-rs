@@ -98,31 +98,35 @@ impl Document {
         let Some(syntax) = self.syntax else {
             return;
         };
-        let mut open_comment = false;
+        let mut depth = 0;
         for row in &mut self.rows {
-            let (hl, ends) = syntax.highlight(row.chars(), open_comment);
+            let (hl, ends) = syntax.highlight(row.chars(), depth);
             row.set_highlight(hl);
-            row.set_open_comment(ends);
-            open_comment = ends;
+            row.set_comment_depth(ends);
+            depth = ends;
         }
     }
 
-    /// Re-highlights from row `from`, continuing only while the open-comment state changes
-    /// (the same short-circuit kilo uses).
+    /// Re-highlights from row `from`, continuing only while the comment depth changes
+    /// (the same short-circuit kilo uses for its open-comment flag).
     fn refresh_syntax(&mut self, from: usize) {
         let Some(syntax) = self.syntax else {
             return;
         };
-        let mut open_comment = from > 0 && self.rows[from - 1].open_comment();
+        let mut depth = if from > 0 {
+            self.rows[from - 1].comment_depth()
+        } else {
+            0
+        };
         for row in &mut self.rows[from..] {
-            let (hl, ends) = syntax.highlight(row.chars(), open_comment);
-            let changed = row.open_comment() != ends;
+            let (hl, ends) = syntax.highlight(row.chars(), depth);
+            let changed = row.comment_depth() != ends;
             row.set_highlight(hl);
-            row.set_open_comment(ends);
+            row.set_comment_depth(ends);
             if !changed {
                 break;
             }
-            open_comment = ends;
+            depth = ends;
         }
     }
 
@@ -260,7 +264,7 @@ mod tests {
     fn multi_line_comment_state_propagates_on_edit() {
         let lines = [String::from("/*"), String::from("x")];
         let mut d = Document::new(&lines, Some(String::from("a.c")));
-        assert!(d.row(0).unwrap().open_comment());
+        assert_eq!(d.row(0).unwrap().comment_depth(), 1);
         assert_eq!(
             d.row(1).unwrap().highlight()[0],
             Highlight::MultilineComment
@@ -269,7 +273,7 @@ mod tests {
         // Closing the comment on row 0 clears the state on row 1.
         d.insert_char(0, 2, '*');
         d.insert_char(0, 3, '/');
-        assert!(!d.row(0).unwrap().open_comment());
+        assert_eq!(d.row(0).unwrap().comment_depth(), 0);
         assert_eq!(d.row(1).unwrap().highlight()[0], Highlight::Normal);
     }
 }

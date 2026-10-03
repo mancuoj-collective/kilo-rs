@@ -11,7 +11,7 @@
 <h1>第 11 课 · 语法高亮</h1>
 <p class="lesson-meta">kilo-rs 课程 · Lesson 0011 · 预计 60–75 分钟 · 新模块：<code>syntax.rs</code>（规则表 + 状态机）</p>
 
-<p class="lede">到目前为止，正文只有一种颜色（命中时才反显）。这一课给 <strong>C 与 Rust 文件</strong>上色：
+<p class="lede">到目前为止，正文只有一种颜色（命中时才高亮）。这一课给 <strong>C 与 Rust 文件</strong>上色：
 注释、字符串、数字、关键字各归其位。做法是经典的两件事——一张<strong>规则表</strong>（数据）
 加一个小<strong>词法分析器</strong>（行为）。难点是 <code>/* … */</code> 会<strong>跨行</strong>，
 这正是一个「状态机」要解决的问题。</p>
@@ -521,21 +521,28 @@ pub struct Document {
 
 <div class="task">
 <p><span class="tag">任务 4</span> 改 <code>src/ui.rs</code>：类别 → 颜色</p>
-<p>逐段打印时按类别上色、命中则叠反显。颜色映射放在 <code>ui</code>（渲染唯一负责样式的地方），
-用的正是 kilo 的 ANSI 槽位：</p>
-<pre><code class="language-rust">/// Writes one rendered segment with its syntax color and/or match overlay.
+<p>逐段打印时按类别上色；命中则用<strong>琥珀底 + 黑字</strong>标出。颜色映射放在 <code>ui</code>
+（渲染唯一负责样式的地方）；别忘把 <code>SetBackgroundColor</code> 加进 <code>crossterm::style</code> 的导入。</p>
+<pre><code class="language-rust">/// Writes one rendered segment with its syntax color, or the search-match style.
 fn draw_segment(stdout: &amp;mut io::Stdout, segment: &amp;Segment) -&gt; io::Result&lt;()&gt; {
+    if segment.matched {
+        // Search match: a bright background + black text reads on any theme.
+        queue!(
+            stdout,
+            SetBackgroundColor(Color::Yellow),
+            SetForegroundColor(Color::Black),
+            Print(&amp;segment.text),
+            SetBackgroundColor(Color::Reset),
+            SetForegroundColor(Color::Reset),
+        )?;
+        return Ok(());
+    }
+
     let color = highlight_color(segment.highlight);
     if let Some(color) = color {
         queue!(stdout, SetForegroundColor(color))?;
     }
-    if segment.matched {
-        queue!(stdout, SetAttribute(Attribute::Reverse))?;
-    }
     queue!(stdout, Print(&amp;segment.text))?;
-    if segment.matched {
-        queue!(stdout, SetAttribute(Attribute::Reset))?;
-    }
     if color.is_some() {
         queue!(stdout, SetForegroundColor(Color::Reset))?;
     }
@@ -544,16 +551,16 @@ fn draw_segment(stdout: &amp;mut io::Stdout, segment: &amp;Segment) -&gt; io::Re
 
 /// The terminal color for a syntax category (`None` = the default foreground).
 ///
-/// These are the standard ANSI slots kilo uses (`editorSyntaxToColor`): cyan comments,
-/// yellow keywords, green type keywords, magenta strings, red numbers.
+/// Picked for legibility on a dark terminal: cyan comments, magenta keywords, blue
+/// types, green strings, red numbers.
 fn highlight_color(highlight: Highlight) -&gt; Option&lt;Color&gt; {
     Some(match highlight {
         Highlight::Normal =&gt; return None,
-        Highlight::Comment | Highlight::MultilineComment =&gt; Color::DarkCyan,
-        Highlight::Keyword1 =&gt; Color::DarkYellow,
-        Highlight::Keyword2 =&gt; Color::DarkGreen,
-        Highlight::String =&gt; Color::DarkMagenta,
-        Highlight::Number =&gt; Color::DarkRed,
+        Highlight::Comment | Highlight::MultilineComment =&gt; Color::Cyan,
+        Highlight::Keyword1 =&gt; Color::Magenta,
+        Highlight::Keyword2 =&gt; Color::Blue,
+        Highlight::String =&gt; Color::Green,
+        Highlight::Number =&gt; Color::Red,
     })
 }</code></pre>
 <p>正文循环里那句 <code>Print(segment.text)</code> 换成 <code>draw_segment(&amp;mut stdout, &amp;segment)?</code>。
@@ -599,7 +606,7 @@ cargo fmt</code></pre>
   所以每个改字符的方法都顺手改 <code>hl</code>；<code>render_window</code> 仍用 <code>hl.get(index)</code>
   防御性取值，万一错位也不会 panic。</li>
 <li><strong>样式归 <code>ui</code></strong>：<code>syntax</code> 只给类别，颜色映射在 <code>ui</code>。
-  <code>DarkCyan</code> 等对应 kilo 的 ANSI 31–36 槽位。</li>
+  <code>Cyan</code> / <code>Magenta</code> / <code>Blue</code> / <code>Green</code> / <code>Red</code> 等终端命名色，跟随主题；比 kilo 的暗色 31–36 槽位清楚。</li>
 </ul>
 
 <h2>小测</h2>

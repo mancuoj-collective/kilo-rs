@@ -73,14 +73,13 @@ fn control_symbol(ch: char) -&gt; char {
 }</code></pre>
 
 <p><code>push_segment</code> 的合并键也要带上 <code>control</code>（四个键都相同才合并）。然后
-<code>src/ui.rs</code> 里，命中或控制字符都走反显：</p>
+<code>src/ui.rs</code> 里，控制字符走反显（搜索命中另用琥珀底 + 黑字）：</p>
 
-<pre><code class="language-rust">let reverse = segment.matched || segment.control;
-if reverse {
+<pre><code class="language-rust">if segment.control {
     queue!(stdout, SetAttribute(Attribute::Reverse))?;
 }
 queue!(stdout, Print(&amp;segment.text))?;
-if reverse {
+if segment.control {
     queue!(stdout, SetAttribute(Attribute::Reset))?;
 }</code></pre>
 
@@ -153,19 +152,91 @@ fn render(editor: &amp;mut Editor) -&gt; io::Result&lt;()&gt; {
 
 <pre><code class="language-rust">let query = prompt_with(editor, "Search (ESC/Arrows/Enter): ", |editor, query, key| match key {</code></pre>
 
+<h2>四、收尾优化</h2>
+
+<h3>Rust 嵌套块注释</h3>
+<p>原版（C）一遇到 <code>*/</code> 就结束注释；但 Rust 允许嵌套 <code>/* /* */ */</code>。
+把「是否在注释中」从布尔换成<strong>深度</strong>即可：进入 <code>/*</code> 深度 +1，遇到 <code>*/</code> 深度 −1，
+深度 &gt; 0 就继续。给规则加一个 <code>nested_comments</code>（C：<code>false</code>，Rust：<code>true</code>），
+<code>Syntax::highlight</code> 返回 <code>u32</code> 深度，<code>Row</code> 存 <code>comment_depth</code>。</p>
+
+<pre><code class="language-rust">// inside `Syntax::highlight`, the block-comment branch:
+if depth &gt; 0 {
+    if let Some(end) = self.multiline_comment_end {
+        if starts_with(chars, i, end) {
+            hl[i..i + end.chars().count()].fill(Highlight::MultilineComment);
+            i += end.chars().count();
+            depth -= 1;
+            prev_sep = true;
+            continue;
+        }
+    }
+    if self.nested_comments {
+        if let Some(start) = self.multiline_comment_start {
+            if starts_with(chars, i, start) {
+                hl[i..i + start.chars().count()].fill(Highlight::MultilineComment);
+                i += start.chars().count();
+                depth += 1;
+                continue;
+            }
+        }
+    }
+    hl[i] = Highlight::MultilineComment;
+    i += 1;
+    continue;
+}</code></pre>
+
+<h3>按显示列截断</h3>
+<p><code>truncate</code> 原来取 <code>width</code> 个<strong>字符</strong>；中文一个字占两列，中文文件名会溢出。
+改成累加<strong>显示宽度</strong>（<code>unicode-width</code>），状态栏右段的长度也用显示宽度：</p>
+
+<pre><code class="language-rust">fn truncate(text: &amp;str, width: u16) -&gt; String {
+    let max = usize::from(width);
+    let mut used = 0;
+    let mut out = String::new();
+    for ch in text.chars() {
+        let w = ch.width().unwrap_or(0);
+        if used + w &gt; max {
+            break;
+        }
+        used += w;
+        out.push(ch);
+    }
+    out
+}</code></pre>
+
+<h3>欢迎语居中</h3>
+<p>照原版把欢迎语居中（先输出 <code>~</code>，再补到中间）：</p>
+
+<pre><code class="language-rust">fn welcome_line(cols: u16) -&gt; String {
+    let text = format!("{NAME} editor -- version {VERSION}");
+    let max = usize::from(cols);
+    let len = text_width(&amp;text).min(max);
+    let padding = max.saturating_sub(len) / 2;
+
+    let mut line = String::new();
+    if padding &gt; 0 {
+        line.push('~');
+        line.push_str(&amp;" ".repeat(padding - 1));
+    }
+    line.push_str(&amp;truncate(&amp;text, u16::try_from(len).expect("clamped to cols")));
+    line
+}</code></pre>
+
 <h2>验收</h2>
 
-<pre><code class="language-bash">cargo test              # 34 个单元测试
+<pre><code class="language-bash">cargo test              # 35 个单元测试
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check</code></pre>
 
-<p>也可以手工确认：打开含 <code>\x01</code> 的文件应显示为反显的 <code>A</code>；<kbd>Tab</kbd>
-会插入制表符；<kbd>PageDown</kbd> 让光标跳过一屏。</p>
+<p>也可以手工确认：含 <code>\x01</code> 的文件显示为反显的 <code>A</code>；<kbd>Tab</kbd> 插入制表符；
+<kbd>PageDown</kbd> 跳过一屏；Rust 里 <code>/* a /* b */ still */</code> 整段都是注释色；
+无文件启动时欢迎语居中。</p>
 
 <div class="callout">
 <p><span class="tag">仍未对齐</span> 有意保留的差异记在 <code>AGENTS.md</code>（如
-<kbd>Ctrl</kbd>+<kbd>H</kbd>、状态栏文件名截断、欢迎语居中、Rust 的 <code>'x'</code>
-字符字面量不上色等）。</p>
+<kbd>Ctrl</kbd>+<kbd>H</kbd>、状态栏文件名 <code>%.20s</code> 截断、版本号、Rust 的
+<code>'x'</code> 字符字面量不上色等）。</p>
 </div>
 
 <div class="lesson-nav">

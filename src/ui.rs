@@ -12,9 +12,10 @@ use std::io::{self, Write};
 use crossterm::{
     cursor::{self, MoveTo},
     queue,
-    style::{Attribute, Color, Print, SetAttribute, SetForegroundColor},
+    style::{Attribute, Color, Print, SetAttribute, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType},
 };
+use unicode_width::UnicodeWidthChar;
 
 use crate::{editor::Editor, row::Segment, syntax::Highlight};
 
@@ -73,18 +74,30 @@ pub fn draw(editor: &Editor, cols: u16, rows: u16) -> io::Result<()> {
     stdout.flush()
 }
 
-/// Writes one rendered segment with its syntax color and/or match overlay.
+/// Writes one rendered segment with its syntax color, search-match, or control-char style.
 fn draw_segment(stdout: &mut io::Stdout, segment: &Segment) -> io::Result<()> {
+    if segment.matched {
+        // Search match: a bright background + black text reads on any theme.
+        queue!(
+            stdout,
+            SetBackgroundColor(Color::Yellow),
+            SetForegroundColor(Color::Black),
+            Print(&segment.text),
+            SetBackgroundColor(Color::Reset),
+            SetForegroundColor(Color::Reset),
+        )?;
+        return Ok(());
+    }
+
     let color = highlight_color(segment.highlight);
     if let Some(color) = color {
         queue!(stdout, SetForegroundColor(color))?;
     }
-    let reverse = segment.matched || segment.control;
-    if reverse {
+    if segment.control {
         queue!(stdout, SetAttribute(Attribute::Reverse))?;
     }
     queue!(stdout, Print(&segment.text))?;
-    if reverse {
+    if segment.control {
         queue!(stdout, SetAttribute(Attribute::Reset))?;
     }
     if color.is_some() {
@@ -95,16 +108,17 @@ fn draw_segment(stdout: &mut io::Stdout, segment: &Segment) -> io::Result<()> {
 
 /// The terminal color for a syntax category (`None` = the default foreground).
 ///
-/// These are the standard ANSI slots kilo uses (`editorSyntaxToColor`): cyan comments,
-/// yellow keywords, green type keywords, magenta strings, red numbers.
+/// Picked for legibility on a dark terminal: cyan comments, magenta keywords, blue
+/// types, green strings, red numbers (`Grey` looked like plain text; kilo's dim 30-36
+/// slots were hard to read).
 fn highlight_color(highlight: Highlight) -> Option<Color> {
     Some(match highlight {
         Highlight::Normal => return None,
-        Highlight::Comment | Highlight::MultilineComment => Color::DarkCyan,
-        Highlight::Keyword1 => Color::DarkYellow,
-        Highlight::Keyword2 => Color::DarkGreen,
-        Highlight::String => Color::DarkMagenta,
-        Highlight::Number => Color::DarkRed,
+        Highlight::Comment | Highlight::MultilineComment => Color::Cyan,
+        Highlight::Keyword1 => Color::Magenta,
+        Highlight::Keyword2 => Color::Blue,
+        Highlight::String => Color::Green,
+        Highlight::Number => Color::Red,
     })
 }
 
@@ -146,7 +160,7 @@ fn draw_status_bar(
         Print(left),
     )?;
 
-    let right_len = u16::try_from(right.chars().count()).expect("status text is clamped to cols");
+    let right_len = u16::try_from(text_width(&right)).expect("status text is clamped to cols");
     queue!(
         stdout,
         MoveTo(cols.saturating_sub(right_len), row),
@@ -173,12 +187,42 @@ fn draw_message_bar(
     Ok(())
 }
 
-/// Truncates text to the terminal width (by chars, not bytes).
-fn truncate(text: &str, width: u16) -> String {
-    text.chars().take(width as usize).collect()
+/// Display width of `text`, in terminal columns (a wide char counts as two).
+fn text_width(text: &str) -> usize {
+    text.chars().map(|ch| ch.width().unwrap_or(0)).sum()
 }
 
+/// Truncates text to at most `width` display columns (not chars, not bytes).
+fn truncate(text: &str, width: u16) -> String {
+    let max = usize::from(width);
+    let mut used = 0;
+    let mut out = String::new();
+    for ch in text.chars() {
+        let w = ch.width().unwrap_or(0);
+        if used + w > max {
+            break;
+        }
+        used += w;
+        out.push(ch);
+    }
+    out
+}
+
+/// The welcome line, roughly centered like kilo: a leading `~` then the version.
 fn welcome_line(cols: u16) -> String {
-    let text = format!("~ {NAME} editor -- version {VERSION}");
-    truncate(&text, cols)
+    let text = format!("{NAME} editor -- version {VERSION}");
+    let max = usize::from(cols);
+    let len = text_width(&text).min(max);
+    let padding = max.saturating_sub(len) / 2;
+
+    let mut line = String::new();
+    if padding > 0 {
+        line.push('~');
+        line.push_str(&" ".repeat(padding - 1));
+    }
+    line.push_str(&truncate(
+        &text,
+        u16::try_from(len).expect("clamped to cols"),
+    ));
+    line
 }

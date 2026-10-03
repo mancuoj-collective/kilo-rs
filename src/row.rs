@@ -37,8 +37,8 @@ pub struct Row {
     chars: Vec<char>,
     /// Syntax category per char (same length as `chars`).
     hl: Vec<Highlight>,
-    /// Whether this row ends inside a multi-line comment.
-    hl_open_comment: bool,
+    /// Block-comment depth at the end of this row (0 = not in a comment).
+    comment_depth: u32,
     /// Char range of the current search match, if any.
     match_range: Option<Range<usize>>,
 }
@@ -52,7 +52,7 @@ impl Row {
         Self {
             chars,
             hl,
-            hl_open_comment: false,
+            comment_depth: 0,
             match_range: None,
         }
     }
@@ -86,15 +86,15 @@ impl Row {
         self.hl = hl;
     }
 
-    /// Whether this row ends inside a multi-line comment.
+    /// Block-comment depth at the end of this row (0 = not in a comment).
     #[must_use]
-    pub fn open_comment(&self) -> bool {
-        self.hl_open_comment
+    pub fn comment_depth(&self) -> u32 {
+        self.comment_depth
     }
 
-    /// Sets whether this row ends inside a multi-line comment.
-    pub fn set_open_comment(&mut self, open: bool) {
-        self.hl_open_comment = open;
+    /// Sets the block-comment depth at the end of this row.
+    pub fn set_comment_depth(&mut self, depth: u32) {
+        self.comment_depth = depth;
     }
 
     /// Total display width of this row, in columns.
@@ -230,7 +230,7 @@ impl Row {
         Self {
             chars: self.chars.split_off(at),
             hl: self.hl.split_off(at),
-            hl_open_comment: false,
+            comment_depth: 0,
             match_range: None,
         }
     }

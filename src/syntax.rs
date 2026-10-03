@@ -35,6 +35,8 @@ pub struct Syntax {
     string_delimiters: &'static [char],
     /// Whether to highlight numbers.
     highlight_numbers: bool,
+    /// Whether block comments nest (Rust's `/* /* */ */`), rather than ending at the first `*/`.
+    nested_comments: bool,
 }
 
 /// The built-in language table. kilo ships only C; we add Rust.
@@ -53,6 +55,7 @@ static HLDB: &[Syntax] = &[
         multiline_comment_end: Some("*/"),
         string_delimiters: &['"', '\''],
         highlight_numbers: true,
+        nested_comments: false,
     },
     Syntax {
         filetype: "rs",
@@ -71,6 +74,7 @@ static HLDB: &[Syntax] = &[
         // Only `"`: a single quote is a lifetime (`'a`) far more often than a char literal.
         string_delimiters: &['"'],
         highlight_numbers: true,
+        nested_comments: true,
     },
 ];
 
@@ -91,14 +95,15 @@ impl Syntax {
             })
     }
 
-    /// Categorises `chars`, returning the categories (aligned with `chars`) and whether
-    /// the row ends inside a multi-line comment — i.e. whether the next row starts in one.
+    /// Categorises `chars`, returning the categories (aligned with `chars`) and the
+    /// block-comment depth at the end of the row (0 = not in a comment; nested comments
+    /// can go deeper). The next row starts at that depth.
     #[must_use]
-    pub fn highlight(&self, chars: &[char], begins_in_comment: bool) -> (Vec<Highlight>, bool) {
+    pub fn highlight(&self, chars: &[char], begins_in_comment: u32) -> (Vec<Highlight>, u32) {
         let mut hl = vec![Highlight::Normal; chars.len()];
         let mut prev_sep = true;
         let mut in_string: Option<char> = None;
-        let mut in_comment = begins_in_comment;
+        let mut depth = begins_in_comment;
         let mut i = 0;
 
         while i < chars.len() {
@@ -108,7 +113,7 @@ impl Syntax {
             // A single-line comment swallows the rest of the row.
             let singleline = self.singleline_comment_start;
             if in_string.is_none()
-                && !in_comment
+                && depth == 0
                 && singleline.is_some_and(|start| starts_with(chars, i, start))
             {
                 hl[i..].fill(Highlight::Comment);
@@ -116,14 +121,24 @@ impl Syntax {
             }
 
             if in_string.is_none() {
-                if in_comment {
+                if depth > 0 {
                     if let Some(end) = self.multiline_comment_end {
                         if starts_with(chars, i, end) {
                             hl[i..i + end.chars().count()].fill(Highlight::MultilineComment);
                             i += end.chars().count();
-                            in_comment = false;
+                            depth -= 1;
                             prev_sep = true;
                             continue;
+                        }
+                    }
+                    if self.nested_comments {
+                        if let Some(start) = self.multiline_comment_start {
+                            if starts_with(chars, i, start) {
+                                hl[i..i + start.chars().count()].fill(Highlight::MultilineComment);
+                                i += start.chars().count();
+                                depth += 1;
+                                continue;
+                            }
                         }
                     }
                     hl[i] = Highlight::MultilineComment;
@@ -134,7 +149,7 @@ impl Syntax {
                     if starts_with(chars, i, start) {
                         hl[i..i + start.chars().count()].fill(Highlight::MultilineComment);
                         i += start.chars().count();
-                        in_comment = true;
+                        depth = 1;
                         continue;
                     }
                 }
@@ -190,7 +205,7 @@ impl Syntax {
             i += 1;
         }
 
-        (hl, in_comment)
+        (hl, depth)
     }
 
     /// Length of a keyword starting at `at`, and whether it is a "type" keyword.
@@ -238,7 +253,7 @@ mod tests {
     fn keywords_numbers_and_comments() {
         let syntax = Syntax::for_path("x.c").unwrap();
         let text = "return 42; // note";
-        let (hl, _) = syntax.highlight(&chars(text), false);
+        let (hl, _) = syntax.highlight(&chars(text), 0);
 
         assert_eq!(hl[0], Highlight::Keyword1); // return
         assert_eq!(hl[7], Highlight::Number); // 4
@@ -250,7 +265,7 @@ mod tests {
     #[test]
     fn type_keywords_are_their_own_category() {
         let syntax = Syntax::for_path("x.c").unwrap();
-        let (hl, _) = syntax.highlight(&chars("int x;"), false);
+        let (hl, _) = syntax.highlight(&chars("int x;"), 0);
         assert_eq!(hl[0], Highlight::Keyword2); // int|
     }
 
@@ -258,7 +273,7 @@ mod tests {
     fn strings_include_escapes() {
         let syntax = Syntax::for_path("x.c").unwrap();
         let text = "char *s = \"a\\\"b\";";
-        let (hl, _) = syntax.highlight(&chars(text), false);
+        let (hl, _) = syntax.highlight(&chars(text), 0);
 
         let quote = text.find('"').unwrap();
         assert_eq!(hl[quote], Highlight::String);
@@ -269,20 +284,35 @@ mod tests {
     fn multiline_comments_carry_across_rows() {
         let syntax = Syntax::for_path("x.c").unwrap();
 
-        let (_, ends) = syntax.highlight(&chars("/* open"), false);
-        assert!(ends);
+        let (_, ends) = syntax.highlight(&chars("/* open"), 0);
+        assert_eq!(ends, 1);
 
-        let (hl, ends) = syntax.highlight(&chars("still */ int x;"), true);
-        assert!(!ends);
+        let (hl, ends) = syntax.highlight(&chars("still */ int x;"), 1);
+        assert_eq!(ends, 0);
         assert_eq!(hl[0], Highlight::MultilineComment);
         assert_eq!(hl[9], Highlight::Keyword2); // int, after the comment closes
+    }
+
+    #[test]
+    fn rust_block_comments_nest() {
+        let syntax = Syntax::for_path("x.rs").unwrap();
+        // Rust nests: after the first `*/` the comment is still open.
+        let (_, ends) = syntax.highlight(&chars("/* a /* b */"), 0);
+        assert_eq!(ends, 1);
+        let (_, ends) = syntax.highlight(&chars("still */ done"), ends);
+        assert_eq!(ends, 0);
+
+        // C does not nest: the first `*/` closes the comment.
+        let c = Syntax::for_path("x.c").unwrap();
+        let (_, ends) = c.highlight(&chars("/* a /* b */"), 0);
+        assert_eq!(ends, 0);
     }
 
     #[test]
     fn rust_keywords_strings_and_primitive_types() {
         let syntax = Syntax::for_path("main.rs").unwrap();
         let text = "let n: u32 = 1; // note";
-        let (hl, _) = syntax.highlight(&chars(text), false);
+        let (hl, _) = syntax.highlight(&chars(text), 0);
 
         assert_eq!(hl[0], Highlight::Keyword1); // let
         assert_eq!(hl[7], Highlight::Keyword2); // u32
@@ -294,7 +324,7 @@ mod tests {
     fn rust_lifetimes_do_not_open_a_string() {
         let syntax = Syntax::for_path("x.rs").unwrap();
         let text = "fn f<'a>(s: &'a str) {}";
-        let (hl, _) = syntax.highlight(&chars(text), false);
+        let (hl, _) = syntax.highlight(&chars(text), 0);
 
         // The apostrophe is a lifetime here, not a char-literal quote: nothing is swallowed.
         assert_eq!(hl[text.find('\'').unwrap()], Highlight::Normal);

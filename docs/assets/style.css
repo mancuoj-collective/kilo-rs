@@ -32,9 +32,7 @@
   --olive: #504e49;
   --stone: #6b6a64;
   --brand: #1B365D;
-  --ink-light: #2D5A8A;
   --border: #e8e6dc;
-  --border-soft: #e5e3d8;
   --tag-bg: #E4ECF5;
 
   /* 单一衬线：正文与标题同一字体族，--sans 只是别名 */
@@ -194,18 +192,26 @@ details p { margin: .5rem 0; }
 
 .footer-note { color: var(--stone); font-size: .86rem; margin-top: 2.4rem; }
 
-/* —— Prism 代码高亮：收敛到 kami 的暖色 / 墨蓝基调 —— */
+/* —— Prism 代码高亮：多色暖调（比 kami 的单色更花，适合教程）—— */
 .token.comment,
 .token.prolog,
 .token.doctype,
-.token.cdata { color: var(--stone); }
+.token.cdata { color: #6b6a64; }
 
-.token.punctuation { color: var(--stone); }
+.token.punctuation { color: #6b6a64; }
 
 .token.keyword,
 .token.rule,
 .token.atrule,
-.token.directive { color: var(--brand); font-weight: 500; }
+.token.directive { color: #9a3b4a; font-weight: 500; }
+
+.token.builtin,
+.token.class-name,
+.token.namespace,
+.token.type { color: #1f6f6b; }
+
+.token.function,
+.token.macro-name { color: #6a4b8a; }
 
 .token.string,
 .token.char,
@@ -215,21 +221,17 @@ details p { margin: .5rem 0; }
 .token.number,
 .token.boolean,
 .token.constant,
-.token.symbol,
-.token.builtin,
-.token.attr-name { color: #8a5a2b; }
+.token.symbol { color: #a05a1f; }
 
-.token.function,
-.token.class-name,
-.token.macro-name,
-.token.namespace,
-.token.property { color: var(--ink-light); }
+.token.attr-name,
+.token.property,
+.token.variable { color: #2d5a8a; }
+
+.token.lifetime { color: #8a3a6a; }
 
 .token.operator,
 .token.entity,
-.token.url { color: var(--dark-warm); }
-
-.token.lifetime { color: #6a4b8a; }
+.token.url { color: #7a4a2a; }
 
 .token.deleted { color: #8a3a2c; }
 

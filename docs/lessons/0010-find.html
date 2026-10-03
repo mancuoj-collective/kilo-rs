@@ -35,7 +35,7 @@
 <thead><tr><th></th><th>谁知道「哪段命中」</th><th>谁知道「命中长什么样」</th></tr></thead>
 <tbody>
 <tr><td><code>Row</code></td><td>它持有字符和命中的字符区间（<code>match_range</code>）</td><td>不知道——只标记「这段是命中」</td></tr>
-<tr><td><code>ui</code></td><td>不知道</td><td>它把命中段套上反显（<code>Reverse</code>）</td></tr>
+<tr><td><code>ui</code></td><td>不知道</td><td>它把命中段标成琥珀底 + 黑字</td></tr>
 </tbody>
 </table>
 
@@ -279,15 +279,19 @@ pub struct ViewState {
 
 <div class="task">
 <p><span class="tag">任务 4</span> 改 <code>src/ui.rs</code>：逐段打印</p>
-<p>把原来「打印整行」的那一句，换成分段循环——命中段套上反显，打完立刻复位：</p>
+<p>把原来「打印整行」的那一句，换成分段循环——命中段标成琥珀底 + 黑字（记得把
+<code>SetBackgroundColor</code> / <code>SetForegroundColor</code> 加进 <code>crossterm::style</code> 的导入），
+打完立刻复位：</p>
 <pre><code class="language-rust">        if let Some(row) = document.row(filerow) {
             for segment in row.render_window(coloff, width) {
                 if segment.matched {
                     queue!(
                         stdout,
-                        SetAttribute(Attribute::Reverse),
+                        SetBackgroundColor(Color::Yellow),
+                        SetForegroundColor(Color::Black),
                         Print(segment.text),
-                        SetAttribute(Attribute::Reset),
+                        SetBackgroundColor(Color::Reset),
+                        SetForegroundColor(Color::Reset),
                     )?;
                 } else {
                     queue!(stdout, Print(segment.text))?;
@@ -406,13 +410,13 @@ cargo fmt</code></pre>
 <p class="q">1. <code>render_window</code> 为什么返回 <code>Vec&lt;Segment&gt;</code>，而不是一个带 ANSI 的字符串？</p>
 <ul>
 <li>让 <code>Row</code> 只描述「哪段命中」，样式由 <code>ui</code> 决定</li>
-<li>因为 <code>String</code> 里不能存放反显控制码</li>
+<li>因为 <code>String</code> 里不能存放 ANSI 控制码</li>
 <li>因为分段比字符串更省内存</li>
 <li>为了支持同时高亮多行</li>
 </ul>
 <details>
 <summary>看答案</summary>
-<p>第一个。分层：<code>Row</code> 决定命中区间，<code>ui</code> 决定用反显还是别的样式。
+<p>第一个。分层：<code>Row</code> 决定命中区间，<code>ui</code> 决定用什么样式（底色、反显……）。
 这样 <code>Row</code> 与终端无关，可单独测试。</p>
 </details>
 </div>
