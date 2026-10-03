@@ -1,8 +1,11 @@
-//! Editable editor state: cursor, viewport, and rendering by display column.
+//! The editor: the document, plus the cursor and viewport.
+//!
+//! Editing here means "translate a keystroke into a document edit and move the cursor".
+//! The document owns the text; the editor owns the cursor and what is visible.
 
 use std::io;
 
-use crate::row::Row;
+use crate::document::Document;
 
 /// A cursor movement direction.
 #[derive(Clone, Copy)]
@@ -15,13 +18,9 @@ pub enum Move {
     End,
 }
 
-/// Editor state: buffer, cursor, and viewport.
+/// Editor state: the document, the cursor, and the viewport.
 pub struct Editor {
-    rows: Vec<Row>,
-    /// File name, when the buffer came from (or is saved to) a file.
-    filename: Option<String>,
-    /// Whether the buffer has unsaved changes.
-    dirty: bool,
+    document: Document,
     /// Cursor position in **chars**: `cx` is the char index, `cy` the row.
     cx: usize,
     cy: usize,
@@ -35,9 +34,7 @@ impl Editor {
     #[must_use]
     pub fn new(lines: &[String], filename: Option<String>) -> Self {
         Self {
-            rows: lines.iter().map(|line| Row::new(line)).collect(),
-            filename,
-            dirty: false,
+            document: Document::new(lines, filename),
             cx: 0,
             cy: 0,
             coloff: 0,
@@ -45,100 +42,10 @@ impl Editor {
         }
     }
 
-    /// Whether the buffer has unsaved changes.
+    /// The document, for rendering.
     #[must_use]
-    pub fn is_dirty(&self) -> bool {
-        self.dirty
-    }
-
-    /// File name shown in the status line.
-    #[must_use]
-    pub fn filename(&self) -> Option<&str> {
-        self.filename.as_deref()
-    }
-
-    /// The whole buffer as text, rows joined by `\n`.
-    #[must_use]
-    pub fn serialize(&self) -> String {
-        let mut out = String::new();
-        for row in &self.rows {
-            out.push_str(&row.text());
-            out.push('\n');
-        }
-        out
-    }
-
-    /// Writes the buffer to its file. Does nothing when there is no file name.
-    ///
-    /// # Errors
-    ///
-    /// Returns the underlying I/O error if the file cannot be written.
-    pub fn save(&mut self) -> io::Result<()> {
-        let Some(path) = &self.filename else {
-            return Ok(());
-        };
-        std::fs::write(path, self.serialize())?;
-        self.dirty = false;
-        Ok(())
-    }
-
-    /// Inserts `ch` at the cursor.
-    pub fn insert_char(&mut self, ch: char) {
-        if self.cy == self.rows.len() {
-            self.rows.push(Row::new(""));
-        }
-        if let Some(row) = self.rows.get_mut(self.cy) {
-            row.insert_char(self.cx, ch);
-        }
-        self.cx += 1;
-        self.dirty = true;
-    }
-
-    /// Splits the current row at the cursor (Enter / Return).
-    pub fn insert_newline(&mut self) {
-        if self.cx == 0 || self.cy >= self.rows.len() {
-            self.rows.insert(self.cy, Row::new(""));
-        } else {
-            let tail = self.rows[self.cy].split_off(self.cx);
-            self.rows.insert(self.cy + 1, tail);
-        }
-        self.cy += 1;
-        self.cx = 0;
-        self.dirty = true;
-    }
-
-    /// Deletes the char before the cursor; at column 0 it joins with the previous row.
-    pub fn delete_char(&mut self) {
-        if self.cy >= self.rows.len() {
-            return;
-        }
-        if self.cx == 0 {
-            if self.cy == 0 {
-                return;
-            }
-            // Take the current row out so we own it, then append it to the previous one.
-            let mut row = self.rows.remove(self.cy);
-            let prev = &mut self.rows[self.cy - 1];
-            self.cx = prev.len();
-            prev.append(&mut row);
-            self.cy -= 1;
-        } else {
-            self.rows[self.cy].delete_char(self.cx - 1);
-            self.cx -= 1;
-        }
-        self.dirty = true;
-    }
-
-    /// Number of rows.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.rows.len()
-    }
-
-    /// Whether there are no rows.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.rows.is_empty()
+    pub fn document(&self) -> &Document {
+        &self.document
     }
 
     /// Cursor position `(display column, row)`; the column is a display column, not a char index.
@@ -153,17 +60,52 @@ impl Editor {
         (self.coloff, self.rowoff)
     }
 
-    /// Renders row `index` at display columns `[coloff, coloff + width)`.
-    #[must_use]
-    pub fn render_line(&self, index: usize, coloff: usize, width: usize) -> Option<String> {
-        self.rows
-            .get(index)
-            .map(|row| row.render_window(coloff, width))
+    /// Inserts `ch` at the cursor.
+    pub fn insert_char(&mut self, ch: char) {
+        self.document.insert_char(self.cy, self.cx, ch);
+        self.cx += 1;
+    }
+
+    /// Splits the current row at the cursor (Enter / Return).
+    pub fn insert_newline(&mut self) {
+        if self.cx == 0 || self.cy >= self.document.len() {
+            self.document.insert_empty_row(self.cy);
+        } else {
+            self.document.split_line(self.cy, self.cx);
+        }
+        self.cy += 1;
+        self.cx = 0;
+    }
+
+    /// Deletes the char before the cursor; at column 0 it joins with the previous row.
+    pub fn delete_char(&mut self) {
+        if self.cy >= self.document.len() {
+            return;
+        }
+        if self.cx == 0 {
+            if self.cy == 0 {
+                return;
+            }
+            self.cx = self.document.join_lines(self.cy);
+            self.cy -= 1;
+        } else {
+            self.document.delete_char(self.cy, self.cx - 1);
+            self.cx -= 1;
+        }
+    }
+
+    /// Saves the document to its file.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying I/O error if the file cannot be written.
+    pub fn save(&mut self) -> io::Result<()> {
+        self.document.save()
     }
 
     /// Moves the cursor in the given direction (in chars).
     pub fn move_cursor(&mut self, direction: Move) {
-        let numrows = self.rows.len();
+        let numrows = self.document.len();
         match direction {
             Move::Left => {
                 if self.cx > 0 {
@@ -221,13 +163,13 @@ impl Editor {
 
     /// Number of chars in the cursor's row.
     fn current_line_len(&self) -> usize {
-        self.rows.get(self.cy).map_or(0, Row::len)
+        self.document.line_len(self.cy)
     }
 
     /// Display column of the cursor.
     fn current_rx(&self) -> usize {
-        self.rows
-            .get(self.cy)
+        self.document
+            .row(self.cy)
             .map_or(0, |row| row.cx_to_rx(self.cx))
     }
 }
@@ -283,8 +225,8 @@ mod tests {
         e.move_cursor(Move::End);
         e.insert_char('c');
         assert_eq!(e.cursor(), (3, 0));
-        assert_eq!(e.serialize(), "abc\n");
-        assert!(e.is_dirty());
+        assert_eq!(e.document().serialize(), "abc\n");
+        assert!(e.document().is_dirty());
     }
 
     #[test]
@@ -294,7 +236,7 @@ mod tests {
         e.move_cursor(Move::Right); // cx = 2
         e.insert_newline();
         assert_eq!(e.cursor(), (0, 1));
-        assert_eq!(e.serialize(), "ab\ncd\n");
+        assert_eq!(e.document().serialize(), "ab\ncd\n");
     }
 
     #[test]
@@ -303,6 +245,6 @@ mod tests {
         e.move_cursor(Move::Down); // cy = 1, cx = 0
         e.delete_char();
         assert_eq!(e.cursor(), (5, 0));
-        assert_eq!(e.serialize(), "helloworld!!\n");
+        assert_eq!(e.document().serialize(), "helloworld!!\n");
     }
 }

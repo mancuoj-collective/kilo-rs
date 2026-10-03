@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 8 课 · 拆出 document 与 ui</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>第 8 课 · 拆出 document 与 ui</h1>
+<p class="lesson-meta">kilo-rs 课程 · Lesson 0008 · 预计 35–45 分钟 · 只搬家，不加功能</p>
+
+<p class="lede">第 7 课之后，<code>Editor</code> 同时管着三件事：<strong>缓冲区</strong>（数据）、
+<strong>光标 / 视口</strong>（状态）、<strong>渲染</strong>（表现）。这一课按接缝把它拆开，
+让每块只做一件事，并把渲染变成<strong>只读</strong>的纯函数。</p>
+
+<div class="win">
+<p><span class="tag">本课成果</span></p>
+<ul>
+<li>新增 <code>src/document.rs</code>（域模型：缓冲区）与 <code>src/ui.rs</code>（纯渲染）；</li>
+<li><code>Editor</code> 变回「光标 + 视口 + 编排」，不再直接摆弄字符数组；</li>
+<li><code>ui::draw</code> 收到的是 <code>&amp;Editor</code>（只读）；</li>
+<li><strong>行为与上一课逐字节一致</strong>，测试 15 个全过。</li>
+</ul>
+</div>
+
+<h2>拆分的依据：三块职责已经长在一起</h2>
+
+<p>第 7 课的 <code>Editor</code> 里混着三种变化：</p>
+
+<table>
+<thead><tr><th>职责</th><th>它随什么变化</th><th>拆到哪</th></tr></thead>
+<tbody>
+<tr><td>缓冲区（行、文件名、脏标记、编辑）</td><td>文本模型、文件 I/O</td><td><code>document.rs</code></td></tr>
+<tr><td>光标、视口、按键编排</td><td>交互方式</td><td><code>editor.rs</code>（保留）</td></tr>
+<tr><td>把状态画到终端</td><td>屏幕布局、颜色、字符宽度</td><td><code>ui.rs</code></td></tr>
+</tbody>
+</table>
+
+<p>这正是「深模块 / 接缝」的判断：<strong>能各自动、且能用一个小接口隔开的，就是两个模块。</strong>
+拆完后，<code>Document</code> 不认识光标，<code>ui</code> 不认识编辑，<code>Editor</code> 只负责把两者接起来。</p>
+
+<div class="callout">
+<p><span class="tag">关键</span> 重构的铁律不变：<strong>行为不变的搬家</strong>。先让上一课跑通 → 只移动代码 →
+再跑一遍。<strong>绝不一边重构一边加功能</strong>——否则「搬错了」和「新 bug」会混在一起。</p>
+</div>
+
+<h2>动手</h2>
+
+<div class="task">
+<p><span class="tag">任务 1</span> 新建 <code>src/document.rs</code></p>
+<pre><code class="language-rust">//! The text buffer: rows, file name, dirty flag, and line-level edits.
+//!
+//! This is the domain model. It knows nothing about the cursor or the terminal; it only
+//! answers "what is on row N" and "change row N at char C".
+
+use std::io;
+
+use crate::row::Row;
+
+/// The edited document: a list of rows plus the file metadata.
+pub struct Document {
+    rows: Vec&lt;Row&gt;,
+    filename: Option&lt;String&gt;,
+    dirty: bool,
+}
+
+impl Document {
+    /// Builds a document from lines and an optional file name.
+    #[must_use]
+    pub fn new(lines: &amp;[String], filename: Option&lt;String&gt;) -&gt; Self {
+        Self {
+            rows: lines.iter().map(|line| Row::new(line)).collect(),
+            filename,
+            dirty: false,
+        }
+    }
+
+    /// Number of rows.
+    #[must_use]
+    pub fn len(&amp;self) -&gt; usize {
+        self.rows.len()
+    }
+
+    /// Whether there are no rows.
+    #[must_use]
+    pub fn is_empty(&amp;self) -&gt; bool {
+        self.rows.is_empty()
+    }
+
+    /// Whether the document has unsaved changes.
+    #[must_use]
+    pub fn is_dirty(&amp;self) -&gt; bool {
+        self.dirty
+    }
+
+    /// File name, if any.
+    #[must_use]
+    pub fn filename(&amp;self) -&gt; Option&lt;&amp;str&gt; {
+        self.filename.as_deref()
+    }
+
+    /// The row at `index`, if it exists.
+    #[must_use]
+    pub fn row(&amp;self, index: usize) -&gt; Option&lt;&amp;Row&gt; {
+        self.rows.get(index)
+    }
+
+    /// Number of chars in row `cy`; 0 if the row doesn't exist.
+    #[must_use]
+    pub fn line_len(&amp;self, cy: usize) -&gt; usize {
+        self.rows.get(cy).map_or(0, Row::len)
+    }
+
+    /// Inserts `ch` at char `cx` of row `cy`. Creates the row when `cy` is past the end.
+    pub fn insert_char(&amp;mut self, cy: usize, cx: usize, ch: char) {
+        if cy == self.rows.len() {
+            self.rows.push(Row::new(""));
+        }
+        if let Some(row) = self.rows.get_mut(cy) {
+            row.insert_char(cx, ch);
+        }
+        self.dirty = true;
+    }
+
+    /// Deletes the char at `cx` within row `cy`.
+    pub fn delete_char(&amp;mut self, cy: usize, cx: usize) {
+        if let Some(row) = self.rows.get_mut(cy) {
+            row.delete_char(cx);
+        }
+        self.dirty = true;
+    }
+
+    /// Inserts an empty row at `at`.
+    pub fn insert_empty_row(&amp;mut self, at: usize) {
+        self.rows.insert(at, Row::new(""));
+        self.dirty = true;
+    }
+
+    /// Splits row `cy` at `cx`, moving the tail into a new row below it.
+    pub fn split_line(&amp;mut self, cy: usize, cx: usize) {
+        // End the mutable borrow of `self.rows` before inserting into it.
+        let tail = self.rows.get_mut(cy).map(|row| row.split_off(cx));
+        if let Some(tail) = tail {
+            self.rows.insert(cy + 1, tail);
+        }
+        self.dirty = true;
+    }
+
+    /// Merges row `cy` into row `cy - 1`; returns the join column (the previous row's length).
+    ///
+    /// `cy` must be greater than 0.
+    pub fn join_lines(&amp;mut self, cy: usize) -&gt; usize {
+        debug_assert!(cy &gt; 0, "join_lines needs a row below the first");
+        // Own the current row first, so the previous row can be borrowed mutably.
+        let mut row = self.rows.remove(cy);
+        let prev = &amp;mut self.rows[cy - 1];
+        let col = prev.len();
+        prev.append(&amp;mut row);
+        self.dirty = true;
+        col
+    }
+
+    /// The whole document as text, rows joined by `\n`.
+    #[must_use]
+    pub fn serialize(&amp;self) -&gt; String {
+        let mut out = String::new();
+        for row in &amp;self.rows {
+            out.push_str(&amp;row.text());
+            out.push('\n');
+        }
+        out
+    }
+
+    /// Writes the document to its file. Does nothing when there is no file name.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying I/O error if the file cannot be written.
+    pub fn save(&amp;mut self) -&gt; io::Result&lt;()&gt; {
+        let Some(path) = &amp;self.filename else {
+            return Ok(());
+        };
+        std::fs::write(path, self.serialize())?;
+        self.dirty = false;
+        Ok(())
+    }
+}</code></pre>
+<p>加三个针对域模型的测试：</p>
+<pre><code class="language-rust">#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn doc() -&gt; Document {
+        Document::new(&amp;[String::from("ab"), String::from("cd")], None)
+    }
+
+    #[test]
+    fn split_line_moves_the_tail_down() {
+        let mut d = doc();
+        d.split_line(0, 1);
+        assert_eq!(d.serialize(), "a\nb\ncd\n");
+    }
+
+    #[test]
+    fn join_lines_merges_upward_and_reports_column() {
+        let mut d = doc();
+        let col = d.join_lines(1);
+        assert_eq!(col, 2);
+        assert_eq!(d.serialize(), "abcd\n");
+    }
+
+    #[test]
+    fn editing_marks_dirty() {
+        let mut d = doc();
+        assert!(!d.is_dirty());
+        d.insert_char(0, 0, 'x');
+        assert!(d.is_dirty());
+        assert_eq!(d.serialize(), "xab\ncd\n");
+    }
+}</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 2</span> 改 <code>src/editor.rs</code>：只留光标、视口与编排</p>
+<p>缓冲区相关的字段、<code>serialize</code>、<code>save</code>、<code>is_dirty</code>、<code>filename</code>、<code>render_line</code>
+都搬去 <code>Document</code> / <code>ui</code>；<code>Editor</code> 只保留光标与视口，编辑时转调 <code>Document</code>：</p>
+<pre><code class="language-rust">//! The editor: the document, plus the cursor and viewport.
+
+use std::io;
+
+use crate::document::Document;
+
+/// A cursor movement direction.
+#[derive(Clone, Copy)]
+pub enum Move {
+    Left,
+    Right,
+    Up,
+    Down,
+    Home,
+    End,
+}
+
+/// Editor state: the document, the cursor, and the viewport.
+pub struct Editor {
+    document: Document,
+    /// Cursor position in **chars**: `cx` is the char index, `cy` the row.
+    cx: usize,
+    cy: usize,
+    /// Top-left of the viewport, in **display columns / rows**.
+    coloff: usize,
+    rowoff: usize,
+}
+
+impl Editor {
+    /// Creates a new editor from the given lines and optional file name.
+    #[must_use]
+    pub fn new(lines: &amp;[String], filename: Option&lt;String&gt;) -&gt; Self {
+        Self {
+            document: Document::new(lines, filename),
+            cx: 0,
+            cy: 0,
+            coloff: 0,
+            rowoff: 0,
+        }
+    }
+
+    /// The document, for rendering.
+    #[must_use]
+    pub fn document(&amp;self) -&gt; &amp;Document {
+        &amp;self.document
+    }
+
+    /// Cursor position `(display column, row)`.
+    #[must_use]
+    pub fn cursor(&amp;self) -&gt; (usize, usize) {
+        (self.current_rx(), self.cy)
+    }
+
+    /// Top-left of the viewport, as `(display column, row)`.
+    #[must_use]
+    pub fn viewport(&amp;self) -&gt; (usize, usize) {
+        (self.coloff, self.rowoff)
+    }
+
+    /// Inserts `ch` at the cursor.
+    pub fn insert_char(&amp;mut self, ch: char) {
+        self.document.insert_char(self.cy, self.cx, ch);
+        self.cx += 1;
+    }
+
+    /// Splits the current row at the cursor (Enter / Return).
+    pub fn insert_newline(&amp;mut self) {
+        if self.cx == 0 || self.cy &gt;= self.document.len() {
+            self.document.insert_empty_row(self.cy);
+        } else {
+            self.document.split_line(self.cy, self.cx);
+        }
+        self.cy += 1;
+        self.cx = 0;
+    }
+
+    /// Deletes the char before the cursor; at column 0 it joins with the previous row.
+    pub fn delete_char(&amp;mut self) {
+        if self.cy &gt;= self.document.len() {
+            return;
+        }
+        if self.cx == 0 {
+            if self.cy == 0 {
+                return;
+            }
+            self.cx = self.document.join_lines(self.cy);
+            self.cy -= 1;
+        } else {
+            self.document.delete_char(self.cy, self.cx - 1);
+            self.cx -= 1;
+        }
+    }
+
+    /// Saves the document to its file.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying I/O error if the file cannot be written.
+    pub fn save(&amp;mut self) -&gt; io::Result&lt;()&gt; {
+        self.document.save()
+    }
+
+    // move_cursor / scroll / current_line_len / current_rx 基本不变，
+    // 只是 current_line_len 和 current_rx 改成问 self.document</code></pre>
+<p>两个私有辅助改成委托：</p>
+<pre><code class="language-rust">    /// Number of chars in the cursor's row.
+    fn current_line_len(&amp;self) -&gt; usize {
+        self.document.line_len(self.cy)
+    }
+
+    /// Display column of the cursor.
+    fn current_rx(&amp;self) -&gt; usize {
+        self.document
+            .row(self.cy)
+            .map_or(0, |row| row.cx_to_rx(self.cx))
+    }</code></pre>
+<p>测试里 <code>e.serialize()</code> / <code>e.is_dirty()</code> 改成 <code>e.document().serialize()</code> / <code>e.document().is_dirty()</code>，其余不变。</p>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 3</span> 新建 <code>src/ui.rs</code>：纯渲染</p>
+<pre><code class="language-rust">//! Rendering: turn the editor state into terminal output.
+//!
+//! This layer is pure with respect to the editor: it only reads it and writes to the
+//! terminal. Scrolling the viewport is *not* done here — the caller does that before
+//! calling [`draw`], so rendering stays a function of the current state.
+
+use std::io::{self, Write};
+
+use crossterm::{
+    cursor::{self, MoveTo},
+    queue,
+    style::Print,
+    terminal::{Clear, ClearType},
+};
+
+use crate::editor::Editor;
+
+const NAME: &amp;str = env!("CARGO_PKG_NAME");
+const VERSION: &amp;str = env!("CARGO_PKG_VERSION");
+
+/// Draws one frame: the buffer, a status line, and the editor cursor.
+///
+/// # Errors
+///
+/// Returns the underlying I/O error if writing to the terminal fails.
+///
+/// # Panics
+///
+/// Panics if the cursor is outside the viewport — an invariant that [`Editor::scroll`]
+/// maintains, so the caller must run it before drawing.
+pub fn draw(editor: &amp;Editor, cols: u16, rows: u16) -&gt; io::Result&lt;()&gt; {
+    let width = cols as usize;
+    let height = rows as usize;
+    let text_height = height.saturating_sub(1); // keep the bottom row for the status line
+
+    let (coloff, rowoff) = editor.viewport();
+    let (rx, cy) = editor.cursor();
+    let document = editor.document();
+
+    let mut stdout = io::stdout();
+    queue!(stdout, cursor::Hide, Clear(ClearType::All), MoveTo(0, 0))?;
+
+    for y in 0..text_height {
+        let filerow = rowoff + y;
+        if let Some(row) = document.row(filerow) {
+            queue!(stdout, Print(row.render_window(coloff, width)))?;
+        } else if document.is_empty() &amp;&amp; y == text_height / 3 {
+            queue!(stdout, Print(welcome_line(cols)))?;
+        } else {
+            queue!(stdout, Print('~'))?;
+        }
+
+        if y + 1 &lt; height {
+            queue!(stdout, Print("\r\n"))?;
+        }
+    }
+
+    // Status line on the bottom row.
+    let name = document.filename().unwrap_or("[No Name]");
+    let modified = if document.is_dirty() {
+        "  [modified]"
+    } else {
+        ""
+    };
+    let status = truncate(&amp;format!("{name}{modified}"), cols);
+    queue!(
+        stdout,
+        MoveTo(0, rows.saturating_sub(1)),
+        Clear(ClearType::CurrentLine),
+        Print(status),
+    )?;
+
+    // The viewport guarantees the cursor is on screen, so these conversions can't fail.
+    let cursor_col =
+        u16::try_from(rx - coloff).expect("cursor column should be inside the viewport");
+    let cursor_row = u16::try_from(cy - rowoff).expect("cursor row should be inside the viewport");
+    queue!(stdout, MoveTo(cursor_col, cursor_row), cursor::Show)?;
+    stdout.flush()
+}
+
+/// Truncates text to the terminal width (by chars, not bytes).
+fn truncate(text: &amp;str, width: u16) -&gt; String {
+    text.chars().take(width as usize).collect()
+}
+
+fn welcome_line(cols: u16) -&gt; String {
+    let text = format!("~ {NAME} editor -- version {VERSION}");
+    truncate(&amp;text, cols)
+}</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 4</span> 精简 <code>src/lib.rs</code>：只留事件循环</p>
+<pre><code class="language-rust">pub mod document;
+pub mod editor;
+pub mod row;
+pub mod tui;
+pub mod ui;
+
+use std::{env, fs, io};
+
+use color_eyre::Result;
+use crossterm::{
+    event::{self, Event, KeyCode, KeyModifiers},
+    terminal,
+};
+
+use crate::{
+    editor::{Editor, Move},
+    tui::Terminal,
+};
+
+/// Runs the editor: read the file, take over the terminal, enter the event loop.
+///
+/// # Errors
+///
+/// Returns an error if reading the file or a terminal operation fails.
+pub fn run() -&gt; Result&lt;()&gt; {
+    // Read the file name from argv; with no argument, start with an empty buffer.
+    let path = env::args().nth(1);
+    let lines = match &amp;path {
+        Some(path) =&gt; fs::read_to_string(path)?
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+        None =&gt; Vec::new(),
+    };
+
+    let mut editor = Editor::new(&amp;lines, path);
+
+    let _guard = Terminal::enter()?;
+    render(&amp;mut editor)?;
+
+    loop {
+        match event::read()? {
+            Event::Key(key) if key.is_press() =&gt; {
+                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                match key.code {
+                    KeyCode::Char('q') if ctrl =&gt; break,
+                    KeyCode::Char('s') if ctrl =&gt; editor.save()?,
+                    KeyCode::Char(ch) if !ctrl =&gt; editor.insert_char(ch),
+                    KeyCode::Enter =&gt; editor.insert_newline(),
+                    KeyCode::Backspace | KeyCode::Delete =&gt; editor.delete_char(),
+                    KeyCode::Up =&gt; editor.move_cursor(Move::Up),
+                    KeyCode::Down =&gt; editor.move_cursor(Move::Down),
+                    KeyCode::Left =&gt; editor.move_cursor(Move::Left),
+                    KeyCode::Right =&gt; editor.move_cursor(Move::Right),
+                    KeyCode::Home =&gt; editor.move_cursor(Move::Home),
+                    KeyCode::End =&gt; editor.move_cursor(Move::End),
+                    _ =&gt; {}
+                }
+            }
+            _ =&gt; {}
+        }
+        render(&amp;mut editor)?;
+    }
+
+    Ok(())
+}
+
+/// Scrolls the viewport to the current terminal size, then draws one frame.
+fn render(editor: &amp;mut Editor) -&gt; io::Result&lt;()&gt; {
+    let (cols, rows) = terminal::size()?;
+    let text_height = (rows as usize).saturating_sub(1);
+    editor.scroll(text_height, cols as usize);
+    ui::draw(editor, cols, rows)
+}</code></pre>
+<p><code>truncate</code> / <code>welcome_line</code> / <code>NAME</code> / <code>VERSION</code> 都搬去了 <code>ui.rs</code>；
+<code>row.rs</code> / <code>tui.rs</code> / <code>main.rs</code> 不变。</p>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 5</span> 验证「行为不变」</p>
+<pre><code class="language-bash">cargo run -- t.txt     # 和上一课完全一样：敲字、回车、退格、Ctrl-S
+cargo test             # 15 个单元测试
+cargo clippy --all-targets -- -D warnings</code></pre>
+</div>
+
+<h2>逐段拆解</h2>
+
+<ul>
+<li><strong>渲染变成纯函数</strong>：<code>draw</code> 收 <code>&amp;Editor</code>（只读）。能做到是因为把
+  <code>scroll</code> 挪到了调用方（<code>run</code> 里的 <code>render</code>）：<strong>先滚动、再画</strong>。
+  这就是「返回结果，而不是产生副作用」——渲染只依赖当前状态，可预测、可测试。</li>
+<li><strong><code>Document::split_line</code> 的借用技巧</strong>：
+  <code>self.rows.get_mut(cy).map(|row| row.split_off(cx))</code> 让可变借用<strong>在语句结束时就结束</strong>，
+  返回一个<strong>拥有</strong>的尾行；随后 <code>self.rows.insert(...)</code> 才不与它冲突。
+  （和第 7 课是同一种解法，只是搬进了 <code>Document</code>。）</li>
+<li><strong><code>join_lines</code> 的 <code>remove → own → append</code></strong>：同样先让当前行脱离
+  <code>self.rows</code>，才能同时持有「上一行的可变借用」和「这一行」。</li>
+<li><strong><code>draw</code> 变 <code>pub</code> 后多了一个义务</strong>：它是公开函数且会 <code>expect</code>，
+  于是 <code>clippy::pedantic</code> 要求写 <code># Panics</code> 段。<strong>公开接口要交代失败与 panic</strong>——
+  加了 <code>pub</code> 就多一层契约。</li>
+<li><strong><code>Editor::document()</code></strong>：渲染需要读缓冲区，于是 <code>Editor</code> 提供一个只读出口，
+  而不是把整个 <code>Document</code> 交出去。接口只开一条缝。</li>
+</ul>
+
+<div class="callout">
+<p><span class="tag">删除测试</span> 假设删掉 <code>document.rs</code>：缓冲区、文件名、脏标记、编辑、序列化又会散回
+<code>Editor</code> 里；删掉 <code>ui.rs</code>：渲染又会和事件循环纠缠。两个模块都<strong>通过了删除测试</strong>。</p>
+</div>
+
+<h2>小测</h2>
+
+<div class="quiz">
+<p class="q">1. <code>ui::draw</code> 为什么能收 <code>&amp;Editor</code> 而不是 <code>&amp;mut Editor</code>？</p>
+<ul>
+<li>因为滚动视口的职责挪到了调用方</li>
+<li>因为渲染不再需要读取光标位置</li>
+<li>因为 <code>&amp;mut Editor</code> 无法跨模块传递</li>
+<li>因为 <code>Document</code> 已经不可变</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。原来 <code>draw</code> 里顺手调了 <code>editor.scroll(...)</code>，所以需要 <code>&amp;mut</code>。
+现在 <code>scroll</code> 由 <code>run</code> 的 <code>render</code> 先做，<code>draw</code> 只读——渲染因此变成纯函数。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">2. <code>Document::split_line</code> 里 <code>get_mut(cy).map(|row| row.split_off(cx))</code> 的作用？</p>
+<ul>
+<li>让 <code>self.rows</code> 的可变借用提前结束</li>
+<li>把尾行直接插入到下一行列</li>
+<li>在拆分失败时返回一个空行</li>
+<li>把字符下标换算成显示列</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。它在同一条语句里结束对 <code>self.rows</code> 的借用，并返回一个<strong>拥有</strong>的尾行；
+之后 <code>self.rows.insert(...)</code> 才能再次可变借用地插入，而不与旧借用冲突。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">3. 把 <code>draw</code> 从私有改成 <code>pub</code> 为什么多出一个 <code># Panics</code> 要求？</p>
+<ul>
+<li>公开函数要在文档里交代可能的 panic</li>
+<li>因为 <code>pub</code> 会让函数变慢需要说明</li>
+<li>因为 <code>ui</code> 模块没有 <code>#![deny]</code> 标注</li>
+<li>因为 <code>expect</code> 只在 release 模式下生效</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。<code>clippy::pedantic</code> 的 <code>missing_panics_doc</code> 要求<strong>公开</strong>且可能 panic 的函数
+文档里有 <code># Panics</code> 段。私有函数不受此约束——接口一旦公开，就多了一层契约。</p>
+</details>
+</div>
+
+<h2>主要资料</h2>
+<ul class="ref-list">
+<li>深模块与接缝：本课程参考 <em>codebase-design</em>（删除测试、接口小实现大）；速查见
+  <a href="../reference/architecture.html">架构与文件结构</a>。</li>
+<li>借用冲突：<em>m03-mutability</em>；反模式（用 <code>clone</code> 绕过）：<em>m15-anti-pattern</em>。</li>
+<li>对应章节：<a href="https://www.flenker.blog/hecto-chapter-5/">hecto 第 5 章</a>（其 <code>Document</code> 拆分思路）。</li>
+</ul>
+
+<div class="callout">
+<p><span class="tag">下一课</span> 有了 <code>document.rs</code> 与 <code>ui.rs</code>，接下来的<strong>状态栏 / 消息栏</strong>
+（含「另存为」提示、未保存退出警告）与<strong>查找</strong>、<strong>语法高亮</strong>都能各就各位。</p>
+</div>
+
+<div class="lesson-nav">
+  <a class="prev" href="0007-editing-and-saving.html">← 第 7 课 · 编辑与保存</a>
+  <a class="next" href="#">第 9 课 · 状态栏与消息栏（待生成）</a>
+</div>
+
+<p class="footer-note">kilo-rs 课程 · Lesson 0008。总目录见 <a href="../index.html">课程目录</a>。</p>
+
+<script src="../assets/prism.min.js" defer></script>
+</body>
+</html>
