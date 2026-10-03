@@ -144,6 +144,22 @@ impl Row {
             .map(|i| from + i)
     }
 
+    /// Index of the last occurrence of `query` before char index `before` (`before` is
+    /// exclusive); used to step backwards within a row.
+    #[must_use]
+    pub fn find_last(&self, query: &str, before: usize) -> Option<usize> {
+        let mut found = None;
+        let mut from = 0;
+        while let Some(at) = self.find(query, from) {
+            if at >= before {
+                break;
+            }
+            found = Some(at);
+            from = at + 1;
+        }
+        found
+    }
+
     /// Marks `range` (char indices) as the current search match; `None` clears it.
     pub fn set_match(&mut self, range: Option<Range<usize>>) {
         self.match_range = range;
@@ -388,6 +404,14 @@ mod tests {
         assert_eq!(row.find("bc", 0), Some(1));
         assert_eq!(row.find("bc", 2), Some(4));
         assert_eq!(row.find("zz", 0), None);
+    }
+
+    #[test]
+    fn find_last_reports_the_last_match_before_a_column() {
+        let row = Row::new("a.b.a.b");
+        assert_eq!(row.find_last("a", row.len()), Some(4));
+        assert_eq!(row.find_last("a", 4), Some(0));
+        assert_eq!(row.find_last("a", 0), None);
     }
 
     #[test]

@@ -86,6 +86,13 @@ impl Document {
         }
     }
 
+    /// Removes the search highlight from `row`.
+    pub fn clear_match(&mut self, row: usize) {
+        if let Some(row) = self.rows.get_mut(row) {
+            row.set_match(None);
+        }
+    }
+
     /// Removes the search highlight from every row.
     pub fn clear_matches(&mut self) {
         for row in &mut self.rows {

@@ -223,9 +223,55 @@ if depth &gt; 0 {
     line
 }</code></pre>
 
+<h3>同一行的多个匹配</h3>
+<p>原版（以及最初照抄的我们）每行只找<strong>第一个</strong>匹配、再逐行步进，所以同一行里的第二处永远搜不到。
+把 <code>last_match</code> 从「行号」升级为「<code>(行, 列)</code>」，步进时<strong>先在本行内继续</strong>，
+再去扫其他行；往前找需要一个 <code>Row::find_last(query, before)</code>：</p>
+
+<pre><code class="language-rust">// `Find::Next`: the rest of the current row first, then the following rows.
+let same_row = self.last_match.and_then(|(row, col)| {
+    self.document
+        .row(row)
+        .and_then(|line| line.find(query, col + len))
+        .map(|col| (row, col))
+});
+same_row.or_else(|| self.scan_forward(query, next_row, count))</code></pre>
+
+<h3>光标不再越到末行之下（前向删除重写）</h3>
+<p>原版允许光标停在「最后一行下面」：末行按 <kbd>→</kbd>、按 <kbd>↓</kbd>、或末行末按 <kbd>Delete</kbd>，
+光标都会移到不存在的下一行（状态栏显示成 <code>2/1</code>）。而且 <kbd>Delete</kbd> 是「右移再退格」，
+靠这个幽灵行才不会误删最后一个字符——所以修它必须连 <kbd>Delete</kbd> 一起改。</p>
+<pre><code class="language-rust">// `Move::Right` / `Move::Down` stop at the last row
+} else if self.cy + 1 &lt; numrows {
+    self.cy += 1;
+    self.cx = 0;
+}
+
+/// Deletes the char under the cursor (forward delete); at the end of a row it joins
+/// the next row. Does nothing at the very end of the document.
+pub fn delete_forward(&amp;mut self) {
+    if self.cy &gt;= self.document.len() {
+        return;
+    }
+    if self.cx &lt; self.current_line_len() {
+        self.document.delete_char(self.cy, self.cx);
+    } else if self.cy + 1 &lt; self.document.len() {
+        self.document.join_lines(self.cy + 1);
+    }
+}</code></pre>
+<p><code>handle_key</code> 里 <kbd>Delete</kbd> 直接调用 <code>editor.delete_forward()</code>，不再「右移再退格」。</p>
+
+<h3>空文件状态栏 <code>0/0</code></h3>
+<p>空白文件原来显示 <code>1/0</code>；改成没有行时显示 <code>0/0</code>：</p>
+<pre><code class="language-rust">let current = if document.is_empty() { 0 } else { cy + 1 };
+let right = truncate(
+    &amp;format!("{} | {}/{}", document.filetype(), current, document.len()),
+    cols,
+);</code></pre>
+
 <h2>验收</h2>
 
-<pre><code class="language-bash">cargo test              # 35 个单元测试
+<pre><code class="language-bash">cargo test              # 40 个单元测试
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check</code></pre>
 

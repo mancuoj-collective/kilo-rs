@@ -95,7 +95,7 @@ struct Message {
         self.message = None;
     }
 
-    /// The status message, if it was set within the last [`MESSAGE_TTL`].
+    /// The status message, if it was set within `MESSAGE_TTL` (five seconds).
     #[must_use]
     pub fn message(&amp;self) -&gt; Option&lt;&amp;str&gt; {
         self.message

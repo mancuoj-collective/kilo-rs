@@ -53,8 +53,9 @@ pub struct ViewState {
 pub struct Editor {
     document: Document,
     message: Option<Message>,
-    /// Row of the current search match, so `Next` / `Prev` can step from it.
-    last_match: Option<usize>,
+    /// `(row, column)` of the current search match, so `Next` / `Prev` can step from it
+    /// (including a second match on the same row).
+    last_match: Option<(usize, usize)>,
     /// Cursor position in **chars**: `cx` is the char index, `cy` the row.
     cx: usize,
     cy: usize,
@@ -97,7 +98,7 @@ impl Editor {
         self.message = None;
     }
 
-    /// The status message, if it was set within the last [`MESSAGE_TTL`].
+    /// The status message, if it was set within `MESSAGE_TTL` (five seconds).
     #[must_use]
     pub fn message(&self) -> Option<&str> {
         self.message
@@ -136,8 +137,13 @@ impl Editor {
     }
 
     /// Searches for `query`, moving the cursor to the match and wrapping around.
+    ///
+    /// Stepping continues within the current row first, so a second match on the same
+    /// line is reachable (the original kilo only ever found the first one per row).
     pub fn find(&mut self, query: &str, how: Find) {
-        self.document.clear_matches();
+        if let Some((row, _)) = self.last_match {
+            self.document.clear_match(row);
+        }
         if query.is_empty() {
             self.last_match = None;
             return;
@@ -148,30 +154,66 @@ impl Editor {
             self.last_match = None;
             return;
         }
+        let len = query.chars().count();
 
-        let start = match how {
-            Find::FromStart => 0,
-            Find::Next => self.last_match.map_or(0, |row| (row + 1) % count),
-            Find::Prev => self
-                .last_match
-                .map_or(count - 1, |row| (row + count - 1) % count),
+        let found = match how {
+            Find::FromStart => self.scan_forward(query, 0, count),
+            Find::Next => {
+                let same_row = self.last_match.and_then(|(row, col)| {
+                    self.document
+                        .row(row)
+                        .and_then(|line| line.find(query, col + len))
+                        .map(|col| (row, col))
+                });
+                same_row.or_else(|| {
+                    let start = self.last_match.map_or(0, |(row, _)| (row + 1) % count);
+                    self.scan_forward(query, start, count)
+                })
+            }
+            Find::Prev => {
+                let same_row = self.last_match.and_then(|(row, col)| {
+                    self.document
+                        .row(row)
+                        .and_then(|line| line.find_last(query, col))
+                        .map(|col| (row, col))
+                });
+                same_row.or_else(|| {
+                    let start = self
+                        .last_match
+                        .map_or(count - 1, |(row, _)| (row + count - 1) % count);
+                    self.scan_backward(query, start, count)
+                })
+            }
         };
 
-        for offset in 0..count {
-            let row = match how {
-                Find::Prev => (start + count - offset) % count,
-                Find::FromStart | Find::Next => (start + offset) % count,
-            };
-            if let Some(col) = self.document.row(row).and_then(|line| line.find(query, 0)) {
-                self.last_match = Some(row);
-                self.cx = col;
-                self.cy = row;
-                self.document
-                    .set_match(row, col..col + query.chars().count());
-                return;
-            }
-        }
-        self.last_match = None;
+        let Some((row, col)) = found else {
+            self.last_match = None;
+            return;
+        };
+        self.last_match = Some((row, col));
+        self.cx = col;
+        self.cy = row;
+        self.document.set_match(row, col..col + len);
+    }
+
+    /// The first match of `query`, starting at row `start` and wrapping forwards.
+    fn scan_forward(&self, query: &str, start: usize, count: usize) -> Option<(usize, usize)> {
+        (0..count).find_map(|offset| {
+            let row = (start + offset) % count;
+            self.document
+                .row(row)
+                .and_then(|line| line.find(query, 0))
+                .map(|col| (row, col))
+        })
+    }
+
+    /// The last match of `query`, scanning rows backwards from `start` and wrapping.
+    fn scan_backward(&self, query: &str, start: usize, count: usize) -> Option<(usize, usize)> {
+        (0..count).find_map(|offset| {
+            let row = (start + count - offset) % count;
+            let line = self.document.row(row)?;
+            line.find_last(query, line.len()).map(|col| (row, col))
+        })
     }
 
     /// Cursor position `(display column, row)`; the column is a display column, not a char index.
@@ -220,6 +262,19 @@ impl Editor {
         }
     }
 
+    /// Deletes the char under the cursor (forward delete); at the end of a row it joins
+    /// the next row. Does nothing at the very end of the document.
+    pub fn delete_forward(&mut self) {
+        if self.cy >= self.document.len() {
+            return;
+        }
+        if self.cx < self.current_line_len() {
+            self.document.delete_char(self.cy, self.cx);
+        } else if self.cy + 1 < self.document.len() {
+            self.document.join_lines(self.cy + 1);
+        }
+    }
+
     /// Saves the document to its file; returns the number of bytes written.
     ///
     /// # Errors
@@ -242,13 +297,11 @@ impl Editor {
                 }
             }
             Move::Right => {
-                if self.cy < numrows {
-                    if self.cx < self.current_line_len() {
-                        self.cx += 1;
-                    } else {
-                        self.cy += 1;
-                        self.cx = 0;
-                    }
+                if self.cx < self.current_line_len() {
+                    self.cx += 1;
+                } else if self.cy + 1 < numrows {
+                    self.cy += 1;
+                    self.cx = 0;
                 }
             }
             Move::Up => {
@@ -257,7 +310,7 @@ impl Editor {
                 }
             }
             Move::Down => {
-                if self.cy < numrows {
+                if self.cy + 1 < numrows {
                     self.cy += 1;
                 }
             }
@@ -459,5 +512,49 @@ mod tests {
         let mut e = Editor::new(&lines, None);
         e.page_down(10); // 0 + 10 - 1, then down 10
         assert_eq!(e.cursor(), (0, 19));
+    }
+
+    #[test]
+    fn right_and_down_stop_at_the_last_row() {
+        let mut e = Editor::new(&[String::from("abc")], None);
+        e.move_cursor(Move::End);
+        e.move_cursor(Move::Right); // already at the end of the last row
+        assert_eq!(e.cursor(), (3, 0));
+        e.move_cursor(Move::Down);
+        assert_eq!(e.cursor(), (3, 0));
+    }
+
+    #[test]
+    fn delete_forward_removes_the_char_under_the_cursor() {
+        let mut e = Editor::new(&[String::from("abc")], None);
+        for _ in 0..4 {
+            e.delete_forward(); // the 4th is past the end: a no-op
+        }
+        assert_eq!(e.document().serialize(), "\n");
+        assert_eq!(e.cursor(), (0, 0));
+    }
+
+    #[test]
+    fn delete_forward_at_end_of_row_joins_the_next() {
+        let mut e = Editor::new(&[String::from("ab"), String::from("cd")], None);
+        e.move_cursor(Move::End);
+        e.delete_forward();
+        assert_eq!(e.document().serialize(), "abcd\n");
+        assert_eq!(e.cursor(), (2, 0));
+    }
+
+    #[test]
+    fn find_reaches_a_second_match_on_the_same_row() {
+        let mut e = Editor::new(&[String::from("x x x")], None);
+        e.find("x", Find::FromStart);
+        assert_eq!(e.cursor(), (0, 0));
+        e.find("x", Find::Next);
+        assert_eq!(e.cursor(), (2, 0)); // the second match on the same row
+        e.find("x", Find::Next);
+        assert_eq!(e.cursor(), (4, 0));
+        e.find("x", Find::Next); // wraps back to the first
+        assert_eq!(e.cursor(), (0, 0));
+        e.find("x", Find::Prev); // and backwards to the last
+        assert_eq!(e.cursor(), (4, 0));
     }
 }

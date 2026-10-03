@@ -3,6 +3,11 @@ name = "kilo"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
+description = "A text editor rewritten from kilo, taught as a Rust course"
+license = "MIT"
+repository = "https://github.com/mancuoj-collective/kilo-rs"
+keywords = ["editor", "tui", "terminal", "text-editor"]
+categories = ["command-line-utilities", "text-editors"]
 
 [dependencies]
 color-eyre = "0.6.5"

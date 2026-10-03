@@ -86,11 +86,8 @@ fn handle_key(editor: &mut Editor, key: KeyEvent, quit_times: &mut u8) -> io::Re
         KeyCode::Enter => editor.insert_newline(),
         KeyCode::Tab => editor.insert_char('\t'),
         KeyCode::Backspace => editor.delete_char(),
-        // Forward delete: step right, then delete what is now behind the cursor.
-        KeyCode::Delete => {
-            editor.move_cursor(Move::Right);
-            editor.delete_char();
-        }
+        // Forward delete: remove the char under the cursor (joins the next row at EOL).
+        KeyCode::Delete => editor.delete_forward(),
         KeyCode::Up => editor.move_cursor(Move::Up),
         KeyCode::Down => editor.move_cursor(Move::Down),
         KeyCode::Left => editor.move_cursor(Move::Left),

@@ -146,8 +146,9 @@ fn draw_status_bar(
         ),
         cols,
     );
+    let current = if document.is_empty() { 0 } else { cy + 1 };
     let right = truncate(
-        &format!("{} | {}/{}", document.filetype(), cy + 1, document.len()),
+        &format!("{} | {}/{}", document.filetype(), current, document.len()),
         cols,
     );
 
