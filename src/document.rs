@@ -1,29 +1,34 @@
-//! The text buffer: rows, file name, dirty flag, and line-level edits.
+//! The text buffer: rows, file name, dirty flag, syntax choice, and line-level edits.
 //!
 //! This is the domain model. It knows nothing about the cursor or the terminal; it only
-//! answers "what is on row N" and "change row N at char C".
+//! answers "what is on row N" and "change row N at char C". It also keeps each row's
+//! syntax highlighting up to date, since that depends only on the text.
 
 use std::io;
 use std::ops::Range;
 
-use crate::row::Row;
+use crate::{row::Row, syntax::Syntax};
 
 /// The edited document: a list of rows plus the file metadata.
 pub struct Document {
     rows: Vec<Row>,
     filename: Option<String>,
     dirty: bool,
+    syntax: Option<&'static Syntax>,
 }
 
 impl Document {
     /// Builds a document from lines and an optional file name.
     #[must_use]
     pub fn new(lines: &[String], filename: Option<String>) -> Self {
-        Self {
+        let mut document = Self {
             rows: lines.iter().map(|line| Row::new(line)).collect(),
             filename,
             dirty: false,
-        }
+            syntax: None,
+        };
+        document.select_syntax();
+        document
     }
 
     /// Number of rows.
@@ -50,9 +55,16 @@ impl Document {
         self.filename.as_deref()
     }
 
-    /// Sets the file name (used by "Save as").
+    /// Filetype name for the status bar (e.g. `"c"`, or `"no ft"` when unknown).
+    #[must_use]
+    pub fn filetype(&self) -> &'static str {
+        self.syntax.map_or("no ft", |syntax| syntax.filetype)
+    }
+
+    /// Sets the file name (used by "Save as"); re-selects the syntax.
     pub fn set_filename(&mut self, filename: String) {
         self.filename = Some(filename);
+        self.select_syntax();
     }
 
     /// The row at `index`, if it exists.
@@ -81,6 +93,45 @@ impl Document {
         }
     }
 
+    /// Highlights all rows from scratch. Call this after the syntax changes.
+    fn highlight_all(&mut self) {
+        let Some(syntax) = self.syntax else {
+            return;
+        };
+        let mut open_comment = false;
+        for row in &mut self.rows {
+            let (hl, ends) = syntax.highlight(row.chars(), open_comment);
+            row.set_highlight(hl);
+            row.set_open_comment(ends);
+            open_comment = ends;
+        }
+    }
+
+    /// Re-highlights from row `from`, continuing only while the open-comment state changes
+    /// (the same short-circuit kilo uses).
+    fn refresh_syntax(&mut self, from: usize) {
+        let Some(syntax) = self.syntax else {
+            return;
+        };
+        let mut open_comment = from > 0 && self.rows[from - 1].open_comment();
+        for row in &mut self.rows[from..] {
+            let (hl, ends) = syntax.highlight(row.chars(), open_comment);
+            let changed = row.open_comment() != ends;
+            row.set_highlight(hl);
+            row.set_open_comment(ends);
+            if !changed {
+                break;
+            }
+            open_comment = ends;
+        }
+    }
+
+    /// Picks a syntax from the file name and (re-)highlights the whole document.
+    fn select_syntax(&mut self) {
+        self.syntax = self.filename.as_deref().and_then(Syntax::for_path);
+        self.highlight_all();
+    }
+
     /// Inserts `ch` at char `cx` of row `cy`. Creates the row when `cy` is past the end.
     pub fn insert_char(&mut self, cy: usize, cx: usize, ch: char) {
         if cy == self.rows.len() {
@@ -90,6 +141,7 @@ impl Document {
             row.insert_char(cx, ch);
         }
         self.dirty = true;
+        self.refresh_syntax(cy);
     }
 
     /// Deletes the char at `cx` within row `cy`.
@@ -98,12 +150,14 @@ impl Document {
             row.delete_char(cx);
         }
         self.dirty = true;
+        self.refresh_syntax(cy);
     }
 
     /// Inserts an empty row at `at`.
     pub fn insert_empty_row(&mut self, at: usize) {
         self.rows.insert(at, Row::new(""));
         self.dirty = true;
+        self.refresh_syntax(at);
     }
 
     /// Splits row `cy` at `cx`, moving the tail into a new row below it.
@@ -114,6 +168,7 @@ impl Document {
             self.rows.insert(cy + 1, tail);
         }
         self.dirty = true;
+        self.refresh_syntax(cy);
     }
 
     /// Merges row `cy` into row `cy - 1`; returns the join column (the previous row's length).
@@ -127,6 +182,7 @@ impl Document {
         let col = prev.len();
         prev.append(&mut row);
         self.dirty = true;
+        self.refresh_syntax(cy - 1);
         col
     }
 
@@ -160,6 +216,7 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::syntax::Highlight;
 
     fn doc() -> Document {
         Document::new(&[String::from("ab"), String::from("cd")], None)
@@ -187,5 +244,32 @@ mod tests {
         d.insert_char(0, 0, 'x');
         assert!(d.is_dirty());
         assert_eq!(d.serialize(), "xab\ncd\n");
+    }
+
+    #[test]
+    fn syntax_is_selected_from_the_file_name() {
+        let d = Document::new(&[String::from("int x;")], Some(String::from("a.c")));
+        assert_eq!(d.filetype(), "c");
+        assert_eq!(d.row(0).unwrap().highlight()[0], Highlight::Keyword2);
+
+        let d = Document::new(&[String::from("hi")], Some(String::from("a.txt")));
+        assert_eq!(d.filetype(), "no ft");
+    }
+
+    #[test]
+    fn multi_line_comment_state_propagates_on_edit() {
+        let lines = [String::from("/*"), String::from("x")];
+        let mut d = Document::new(&lines, Some(String::from("a.c")));
+        assert!(d.row(0).unwrap().open_comment());
+        assert_eq!(
+            d.row(1).unwrap().highlight()[0],
+            Highlight::MultilineComment
+        );
+
+        // Closing the comment on row 0 clears the state on row 1.
+        d.insert_char(0, 2, '*');
+        d.insert_char(0, 3, '/');
+        assert!(!d.row(0).unwrap().open_comment());
+        assert_eq!(d.row(1).unwrap().highlight()[0], Highlight::Normal);
     }
 }

@@ -337,7 +337,12 @@ fn handle_key(editor: &amp;mut Editor, key: KeyEvent, quit_times: &amp;mut u8) -
         KeyCode::Char('s') if ctrl =&gt; save(editor)?,
         KeyCode::Char(ch) if !ctrl =&gt; editor.insert_char(ch),
         KeyCode::Enter =&gt; editor.insert_newline(),
-        KeyCode::Backspace | KeyCode::Delete =&gt; editor.delete_char(),
+        KeyCode::Backspace =&gt; editor.delete_char(),
+        // Forward delete: step right, then delete what is now behind the cursor.
+        KeyCode::Delete =&gt; {
+            editor.move_cursor(Move::Right);
+            editor.delete_char();
+        }
         KeyCode::Up =&gt; editor.move_cursor(Move::Up),
         KeyCode::Down =&gt; editor.move_cursor(Move::Down),
         KeyCode::Left =&gt; editor.move_cursor(Move::Left),
@@ -401,8 +406,10 @@ fn prompt(editor: &amp;mut Editor, label: &amp;str) -&gt; io::Result&lt;Option&l
 /// Scrolls the viewport to the current terminal size, then draws one frame.
 fn render(editor: &amp;mut Editor) -&gt; io::Result&lt;()&gt; {
     let (cols, rows) = terminal::size()?;
-    let text_height = (rows as usize).saturating_sub(2);
-    editor.scroll(text_height, cols as usize);
+    // With fewer than 3 rows (or no columns) `scroll` could push the viewport past the
+    // cursor; keep at least one row and column so `ui::draw`'s viewport invariant holds.
+    let text_height = (rows as usize).saturating_sub(2).max(1);
+    editor.scroll(text_height, (cols as usize).max(1));
     ui::draw(editor, cols, rows)
 }</code></pre>
 </div>

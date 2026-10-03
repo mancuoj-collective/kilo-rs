@@ -103,20 +103,24 @@
     <td><code>Terminal::enter() -&gt; io::Result&lt;Terminal&gt;</code>、<code>Drop</code>、<code>install_panic_hook()</code>、<code>size()</code></td>
     <td>raw mode、备用屏幕、光标、panic 恢复</td></tr>
 <tr><td><code>document</code></td>
-    <td><code>Document::open(path)</code>、<code>line(i) -&gt; Option&lt;&amp;str&gt;</code>、<code>insert_char</code>、<code>insert_newline</code>、<code>delete_char</code>、<code>save</code>、<code>is_dirty</code></td>
+    <td><code>Document::new(lines, filename)</code>、<code>row(i) -&gt; Option&lt;&amp;Row&gt;</code>、
+        <code>insert_char</code> / <code>delete_char</code> / <code>split_line</code> / <code>join_lines</code>、
+        <code>save</code>、<code>is_dirty</code>、<code>set_match</code></td>
     <td>行的存储、UTF-8 处理、脏标记、文件 I/O</td></tr>
 <tr><td><code>row</code></td>
-    <td><code>Row::from(&amp;str)</code>、<code>render() -&gt; &amp;str</code>、<code>cx_to_rx</code>、<code>rx_to_cx</code></td>
-    <td>tab 展开、高亮片段、坐标换算</td></tr>
+    <td><code>Row::new(&amp;str)</code>、<code>render_window(coloff, width) -&gt; Vec&lt;Segment&gt;</code>、
+        <code>cx_to_rx</code> / <code>rx_to_cx</code>、<code>find</code>、<code>set_match</code></td>
+    <td>tab 展开、命中分段、坐标换算</td></tr>
 <tr><td><code>editor</code></td>
-    <td><code>Editor::new(lines)</code>、<code>move_cursor(Move)</code>、<code>scroll(rows, cols)</code>、<code>cursor()</code> / <code>viewport()</code></td>
-    <td>光标位置、视口滚动、缓冲区内容</td></tr>
+    <td><code>Editor::new(lines, filename)</code>、<code>move_cursor(Move)</code>、<code>scroll(rows, cols)</code>、
+        <code>find(query, Find)</code>、<code>cursor()</code> / <code>viewport()</code> / <code>message()</code></td>
+    <td>光标、视口滚动、消息、查找状态</td></tr>
 <tr><td><code>ui</code></td>
-    <td><code>draw(editor: &amp;Editor, out, area)</code></td>
-    <td>逐行输出、status bar、message bar</td></tr>
+    <td><code>draw(editor: &amp;Editor, cols, rows)</code></td>
+    <td>逐行输出、status bar、message bar、命中反显、语法配色</td></tr>
 <tr><td><code>syntax</code></td>
-    <td><code>Syntax::for_path(path)</code>、<code>highlight(row) -&gt; Vec&lt;Span&gt;</code></td>
-    <td>关键字表、注释/字符串状态机、颜色</td></tr>
+    <td><code>Syntax::for_path(path)</code>、<code>highlight(chars, in_comment) -&gt; (Vec&lt;Highlight&gt;, bool)</code></td>
+    <td>关键字表、注释/字符串状态机、多行注释状态</td></tr>
 </tbody>
 </table>
 
@@ -132,10 +136,13 @@
 <li><strong>第 4 课：<code>tui.rs</code> + <code>lib.rs</code></strong>（已完成）。终端守卫独立，逻辑进库，从此能写测试。</li>
 <li><strong>第 5 课：<code>editor.rs</code></strong>（已完成）。光标与视口状态收进 <code>Editor</code>，并开始写单元测试。</li>
 <li><strong>第 6 课：<code>row.rs</code></strong>（已完成）。一行文本 + 「字符 ↔ 显示列」换算，为 tab 与宽字符打地基。</li>
-<li><strong>编辑功能到来时：<code>document.rs</code></strong>。
-   插入、删除会让「缓冲区」长出一组共享不变式的方法——那时它就是深模块。</li>
-<li><strong>状态栏 / 消息栏：<code>ui.rs</code></strong>。渲染逻辑攒够了，抽成只读 <code>&amp;Editor</code> 的函数。</li>
-<li><strong>语法高亮：<code>syntax.rs</code></strong>。规则表 + 状态机，独立成模块。</li>
+<li><strong>第 7–8 课：<code>document.rs</code></strong>（已完成）。
+   插入、删除让「缓冲区」长出一组共享不变式的方法——它成了深模块。</li>
+<li><strong>第 9 课：<code>ui.rs</code></strong>（已完成）。
+   渲染攒够逻辑，抽成只读 <code>&amp;Editor</code> 的纯函数（状态栏 / 消息栏）。</li>
+<li><strong>第 10 课：查找</strong>（已完成）。没有开新模块：<code>row.rs</code> 的渲染改成<strong>分段</strong>
+   （<code>Vec&lt;Segment&gt;</code>），<code>editor.rs</code> 加查找状态，<code>prompt</code> 泛化出每键回调。</li>
+<li><strong>第 11 课：<code>syntax.rs</code></strong>（已完成）。规则表 + 状态机，独立成模块，复用渲染分段。</li>
 </ol>
 
 <div class="warn">
@@ -159,7 +166,7 @@
 
 <div class="lesson-nav">
   <a class="prev" href="modern-rust-idioms.html">← 参考 · 现代 Rust 惯用法</a>
-  <a class="next" href="crossterm-terminal-basics.html">参考 · 终端基础与 crossterm API →</a>
+  <a class="next" href="../lessons/0001-raw-mode-and-events.html">第 1 课 · 接管终端 →</a>
 </div>
 
 <script src="../assets/prism.min.js" defer></script>

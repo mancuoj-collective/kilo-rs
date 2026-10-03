@@ -7,6 +7,7 @@
 pub mod document;
 pub mod editor;
 pub mod row;
+pub mod syntax;
 pub mod tui;
 pub mod ui;
 
@@ -82,7 +83,12 @@ fn handle_key(editor: &mut Editor, key: KeyEvent, quit_times: &mut u8) -> io::Re
         KeyCode::Char('f') if ctrl => find(editor)?,
         KeyCode::Char(ch) if !ctrl => editor.insert_char(ch),
         KeyCode::Enter => editor.insert_newline(),
-        KeyCode::Backspace | KeyCode::Delete => editor.delete_char(),
+        KeyCode::Backspace => editor.delete_char(),
+        // Forward delete: step right, then delete what is now behind the cursor.
+        KeyCode::Delete => {
+            editor.move_cursor(Move::Right);
+            editor.delete_char();
+        }
         KeyCode::Up => editor.move_cursor(Move::Up),
         KeyCode::Down => editor.move_cursor(Move::Down),
         KeyCode::Left => editor.move_cursor(Move::Left),
@@ -174,7 +180,9 @@ fn prompt_with(
 /// Scrolls the viewport to the current terminal size, then draws one frame.
 fn render(editor: &mut Editor) -> io::Result<()> {
     let (cols, rows) = terminal::size()?;
-    let text_height = (rows as usize).saturating_sub(2);
-    editor.scroll(text_height, cols as usize);
+    // With fewer than 3 rows (or no columns) `scroll` could push the viewport past the
+    // cursor; keep at least one row and column so `ui::draw`'s viewport invariant holds.
+    let text_height = (rows as usize).saturating_sub(2).max(1);
+    editor.scroll(text_height, (cols as usize).max(1));
     ui::draw(editor, cols, rows)
 }

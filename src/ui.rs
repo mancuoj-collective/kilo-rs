@@ -3,17 +3,20 @@
 //! This layer is pure with respect to the editor: it only reads it and writes to the
 //! terminal. Scrolling the viewport is *not* done here — the caller does that before
 //! calling [`draw`], so rendering stays a function of the current state.
+//!
+//! Mapping a [`Highlight`] category to a color lives here too: `syntax` names the
+//! categories, `ui` decides how they look.
 
 use std::io::{self, Write};
 
 use crossterm::{
     cursor::{self, MoveTo},
     queue,
-    style::{Attribute, Print, SetAttribute},
+    style::{Attribute, Color, Print, SetAttribute, SetForegroundColor},
     terminal::{Clear, ClearType},
 };
 
-use crate::editor::Editor;
+use crate::{editor::Editor, row::Segment, syntax::Highlight};
 
 const NAME: &str = env!("CARGO_PKG_NAME");
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -46,16 +49,7 @@ pub fn draw(editor: &Editor, cols: u16, rows: u16) -> io::Result<()> {
         let filerow = rowoff + y;
         if let Some(row) = document.row(filerow) {
             for segment in row.render_window(coloff, width) {
-                if segment.matched {
-                    queue!(
-                        stdout,
-                        SetAttribute(Attribute::Reverse),
-                        Print(segment.text),
-                        SetAttribute(Attribute::Reset),
-                    )?;
-                } else {
-                    queue!(stdout, Print(segment.text))?;
-                }
+                draw_segment(&mut stdout, &segment)?;
             }
         } else if document.is_empty() && y == text_height / 3 {
             queue!(stdout, Print(welcome_line(cols)))?;
@@ -77,6 +71,40 @@ pub fn draw(editor: &Editor, cols: u16, rows: u16) -> io::Result<()> {
     let cursor_row = u16::try_from(cy - rowoff).expect("cursor row should be inside the viewport");
     queue!(stdout, MoveTo(cursor_col, cursor_row), cursor::Show)?;
     stdout.flush()
+}
+
+/// Writes one rendered segment with its syntax color and/or match overlay.
+fn draw_segment(stdout: &mut io::Stdout, segment: &Segment) -> io::Result<()> {
+    let color = highlight_color(segment.highlight);
+    if let Some(color) = color {
+        queue!(stdout, SetForegroundColor(color))?;
+    }
+    if segment.matched {
+        queue!(stdout, SetAttribute(Attribute::Reverse))?;
+    }
+    queue!(stdout, Print(&segment.text))?;
+    if segment.matched {
+        queue!(stdout, SetAttribute(Attribute::Reset))?;
+    }
+    if color.is_some() {
+        queue!(stdout, SetForegroundColor(Color::Reset))?;
+    }
+    Ok(())
+}
+
+/// The terminal color for a syntax category (`None` = the default foreground).
+///
+/// These are the standard ANSI slots kilo uses (`editorSyntaxToColor`): cyan comments,
+/// yellow keywords, green type keywords, magenta strings, red numbers.
+fn highlight_color(highlight: Highlight) -> Option<Color> {
+    Some(match highlight {
+        Highlight::Normal => return None,
+        Highlight::Comment | Highlight::MultilineComment => Color::DarkCyan,
+        Highlight::Keyword1 => Color::DarkYellow,
+        Highlight::Keyword2 => Color::DarkGreen,
+        Highlight::String => Color::DarkMagenta,
+        Highlight::Number => Color::DarkRed,
+    })
 }
 
 /// Draws the reverse-video status bar on the second-to-last row.
@@ -103,7 +131,10 @@ fn draw_status_bar(
         ),
         cols,
     );
-    let right = truncate(&format!("{}/{}", cy + 1, document.len()), cols);
+    let right = truncate(
+        &format!("{} | {}/{}", document.filetype(), cy + 1, document.len()),
+        cols,
+    );
 
     let row = rows.saturating_sub(2);
     queue!(

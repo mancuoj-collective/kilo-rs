@@ -68,7 +68,7 @@ pub struct Row {
     #[must_use]
     pub fn find(&amp;self, query: &amp;str, from: usize) -&gt; Option&lt;usize&gt; {
         let needle: Vec&lt;char&gt; = query.chars().collect();
-        if needle.is_empty() || from &gt; self.chars.len() {
+        if needle.is_empty() || from &gt; self.len() {
             return None;
         }
 
@@ -464,7 +464,7 @@ cargo fmt</code></pre>
 
 <div class="lesson-nav">
   <a class="prev" href="0009-status-and-message-bar.html">← 第 9 课 · 状态栏与消息栏</a>
-  <a class="next" href="#">第 11 课 · 语法高亮（待生成）</a>
+  <a class="next" href="0011-syntax-highlighting.html">第 11 课 · 语法高亮 →</a>
 </div>
 
 <p class="footer-note">kilo-rs 课程 · Lesson 0010。总目录见 <a href="../index.html">课程目录</a>。</p>

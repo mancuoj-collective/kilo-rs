@@ -144,6 +144,7 @@ impl Drop for RawModeGuard {
 <tr><td><code>lazy_static!</code></td><td><code>std::sync::OnceLock</code></td></tr>
 <tr><td><code>once_cell::Lazy</code></td><td><code>std::sync::LazyLock</code>（1.80+）</td></tr>
 <tr><td><code>unwrap()</code> 用于「不可能失败」</td><td>优先 <code>?</code>；确实不可能失败时 <code>expect("reason")</code></td></tr>
+<tr><td><code>.map_or(false, |v| …)</code> / <code>matches!(…)</code></td><td><code>.is_some_and(…)</code> / <code>.is_ok_and(…)</code>（1.70+）——「有值且满足谓词」</td></tr>
 <tr><td><code>.clone()</code> 绕过借用检查</td><td>先想清楚所有权，尽量用 <code>&amp;T</code> / <code>&amp;str</code> / <code>&amp;[T]</code></td></tr>
 </tbody>
 </table>
@@ -198,8 +199,8 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 </ul>
 
 <div class="lesson-nav">
-  <a class="prev" href="../lessons/0001-raw-mode-and-events.html">← 第 1 课 · 接管终端</a>
-  <a class="next" href="crossterm-terminal-basics.html">参考 · 终端基础与 crossterm API →</a>
+  <a class="prev" href="crossterm-terminal-basics.html">← 参考 · 终端基础与 crossterm API</a>
+  <a class="next" href="architecture.html">参考 · 架构与文件结构 →</a>
 </div>
 
 <script src="../assets/prism.min.js" defer></script>

@@ -489,7 +489,12 @@ pub fn run() -&gt; Result&lt;()&gt; {
                     KeyCode::Char('s') if ctrl =&gt; editor.save()?,
                     KeyCode::Char(ch) if !ctrl =&gt; editor.insert_char(ch),
                     KeyCode::Enter =&gt; editor.insert_newline(),
-                    KeyCode::Backspace | KeyCode::Delete =&gt; editor.delete_char(),
+                    KeyCode::Backspace =&gt; editor.delete_char(),
+                    // Forward delete: step right, then delete what is now behind the cursor.
+                    KeyCode::Delete =&gt; {
+                        editor.move_cursor(Move::Right);
+                        editor.delete_char();
+                    }
                     KeyCode::Up =&gt; editor.move_cursor(Move::Up),
                     KeyCode::Down =&gt; editor.move_cursor(Move::Down),
                     KeyCode::Left =&gt; editor.move_cursor(Move::Left),

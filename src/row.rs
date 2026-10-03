@@ -7,18 +7,25 @@
 //!
 //! The cursor is described by char index (cx) but the screen is drawn by column (rx).
 //! This module converts between the two, and slices text by display column.
+//!
+//! A row also carries, per character, a [`Highlight`] category (filled in by
+//! `syntax`) and whether it ends inside a multi-line comment.
 
 use std::ops::Range;
 
 use unicode_width::UnicodeWidthChar;
 
+use crate::syntax::Highlight;
+
 /// Tab stop width.
 const TAB_STOP: usize = 8;
 
-/// A run of rendered text, plus whether it belongs to the current search match.
+/// A run of rendered text plus its style: syntax category and search-match overlay.
 pub struct Segment {
     /// Text to print (tabs expanded; wide chars padded at the window edges).
     pub text: String,
+    /// Syntax-highlight category of this run.
+    pub highlight: Highlight,
     /// Whether this run is part of the current search match.
     pub matched: bool,
 }
@@ -26,6 +33,10 @@ pub struct Segment {
 /// A single line of text.
 pub struct Row {
     chars: Vec<char>,
+    /// Syntax category per char (same length as `chars`).
+    hl: Vec<Highlight>,
+    /// Whether this row ends inside a multi-line comment.
+    hl_open_comment: bool,
     /// Char range of the current search match, if any.
     match_range: Option<Range<usize>>,
 }
@@ -34,8 +45,12 @@ impl Row {
     /// Builds a row from a string.
     #[must_use]
     pub fn new(text: &str) -> Self {
+        let chars: Vec<char> = text.chars().collect();
+        let hl = vec![Highlight::Normal; chars.len()];
         Self {
-            chars: text.chars().collect(),
+            chars,
+            hl,
+            hl_open_comment: false,
             match_range: None,
         }
     }
@@ -50,6 +65,34 @@ impl Row {
     #[must_use]
     pub fn len(&self) -> usize {
         self.chars.len()
+    }
+
+    /// The row's characters (read-only, for the syntax lexer).
+    #[must_use]
+    pub fn chars(&self) -> &[char] {
+        &self.chars
+    }
+
+    /// The syntax categories, one per char.
+    #[must_use]
+    pub fn highlight(&self) -> &[Highlight] {
+        &self.hl
+    }
+
+    /// Replaces the syntax categories (length must match `chars`).
+    pub fn set_highlight(&mut self, hl: Vec<Highlight>) {
+        self.hl = hl;
+    }
+
+    /// Whether this row ends inside a multi-line comment.
+    #[must_use]
+    pub fn open_comment(&self) -> bool {
+        self.hl_open_comment
+    }
+
+    /// Sets whether this row ends inside a multi-line comment.
+    pub fn set_open_comment(&mut self, open: bool) {
+        self.hl_open_comment = open;
     }
 
     /// Total display width of this row, in columns.
@@ -85,7 +128,7 @@ impl Row {
     #[must_use]
     pub fn find(&self, query: &str, from: usize) -> Option<usize> {
         let needle: Vec<char> = query.chars().collect();
-        if needle.is_empty() || from > self.chars.len() {
+        if needle.is_empty() || from > self.len() {
             return None;
         }
 
@@ -104,7 +147,7 @@ impl Row {
         self.match_range = range;
     }
 
-    /// Returns display columns `[coloff, coloff + width)`, split into highlighted and plain runs.
+    /// Returns display columns `[coloff, coloff + width)`, split into styled runs.
     #[must_use]
     pub fn render_window(&self, coloff: usize, width: usize) -> Vec<Segment> {
         let mut segments = Vec::new();
@@ -122,6 +165,7 @@ impl Row {
                 break; // window is full
             }
 
+            let highlight = self.hl.get(index).copied().unwrap_or(Highlight::Normal);
             let matched = self
                 .match_range
                 .as_ref()
@@ -131,10 +175,10 @@ impl Row {
                 // Expand tabs to spaces; pad a wide char straddling the edge with spaces.
                 let from = start.max(coloff);
                 let to = col.min(end);
-                push_segment(&mut segments, &" ".repeat(to - from), matched);
+                push_segment(&mut segments, &" ".repeat(to - from), highlight, matched);
             } else {
                 let mut buf = [0u8; 4];
-                push_segment(&mut segments, ch.encode_utf8(&mut buf), matched);
+                push_segment(&mut segments, ch.encode_utf8(&mut buf), highlight, matched);
             }
         }
 
@@ -151,12 +195,14 @@ impl Row {
     pub fn insert_char(&mut self, cx: usize, ch: char) {
         let at = cx.min(self.len());
         self.chars.insert(at, ch);
+        self.hl.insert(at, Highlight::Normal);
     }
 
     /// Removes the char at `cx`, if it exists.
     pub fn delete_char(&mut self, cx: usize) {
         if cx < self.len() {
             self.chars.remove(cx);
+            self.hl.remove(cx);
         }
     }
 
@@ -166,6 +212,8 @@ impl Row {
         let at = cx.min(self.len());
         Self {
             chars: self.chars.split_off(at),
+            hl: self.hl.split_off(at),
+            hl_open_comment: false,
             match_range: None,
         }
     }
@@ -173,18 +221,22 @@ impl Row {
     /// Appends another row's characters to the end of this one.
     pub fn append(&mut self, other: &mut Row) {
         self.chars.append(&mut other.chars);
+        self.hl.append(&mut other.hl);
     }
 }
 
-/// Appends `text` to `segments`, merging it into the previous run when the match flag agrees.
-fn push_segment(segments: &mut Vec<Segment>, text: &str, matched: bool) {
+/// Appends `text` to `segments`, merging it into the previous run when both style keys agree.
+fn push_segment(segments: &mut Vec<Segment>, text: &str, highlight: Highlight, matched: bool) {
     if text.is_empty() {
         return;
     }
     match segments.last_mut() {
-        Some(last) if last.matched == matched => last.text.push_str(text),
+        Some(last) if last.highlight == highlight && last.matched == matched => {
+            last.text.push_str(text);
+        }
         _ => segments.push(Segment {
             text: text.to_owned(),
+            highlight,
             matched,
         }),
     }
@@ -255,6 +307,24 @@ mod tests {
     }
 
     #[test]
+    fn render_window_carries_the_highlight() {
+        let mut row = Row::new("int x");
+        row.set_highlight(vec![
+            Highlight::Keyword2,
+            Highlight::Keyword2,
+            Highlight::Keyword2,
+            Highlight::Normal,
+            Highlight::Normal,
+        ]);
+
+        let segments = row.render_window(0, 5);
+        assert_eq!(segments[0].text, "int");
+        assert_eq!(segments[0].highlight, Highlight::Keyword2);
+        assert_eq!(segments[1].text, " x");
+        assert_eq!(segments[1].highlight, Highlight::Normal);
+    }
+
+    #[test]
     fn find_reports_char_index_and_can_skip() {
         let row = Row::new("abcabc");
         assert_eq!(row.find("bc", 0), Some(1));
@@ -268,7 +338,10 @@ mod tests {
         let mut tail = row.split_off(2);
         assert_eq!(row.text(), "ab");
         assert_eq!(tail.text(), "cd");
+        assert_eq!(row.highlight().len(), 2);
+        assert_eq!(tail.highlight().len(), 2);
         row.append(&mut tail);
         assert_eq!(row.text(), "abcd");
+        assert_eq!(row.highlight().len(), 4);
     }
 }

@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 11 课 · 语法高亮</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>第 11 课 · 语法高亮</h1>
+<p class="lesson-meta">kilo-rs 课程 · Lesson 0011 · 预计 60–75 分钟 · 新模块：<code>syntax.rs</code>（规则表 + 状态机）</p>
+
+<p class="lede">到目前为止，正文只有一种颜色（命中时才反显）。这一课给 <strong>C 与 Rust 文件</strong>上色：
+注释、字符串、数字、关键字各归其位。做法是经典的两件事——一张<strong>规则表</strong>（数据）
+加一个小<strong>词法分析器</strong>（行为）。难点是 <code>/* … */</code> 会<strong>跨行</strong>，
+这正是一个「状态机」要解决的问题。</p>
+
+<div class="win">
+<p><span class="tag">本课成果</span></p>
+<ul>
+<li>打开 <code>.c</code> / <code>.rs</code> 文件：<code>//</code> 与 <code>/* */</code> 注释、
+    <code>"…"</code> 字符串（含转义）、数字、关键字分别上色；</li>
+<li>状态栏右侧出现 <code>filetype | row/total</code>（例如 <code>c | 1/5</code>、<code>rs | 1/5</code>）；</li>
+<li>编辑时高亮<strong>实时</strong>更新，跨行注释状态正确传播；</li>
+<li>新模块 <code>src/syntax.rs</code>——规则是<strong>数据</strong>，词法是<strong>行为</strong>，渲染仍归 <code>ui</code>。</li>
+</ul>
+</div>
+
+<h2>思路：数据 + 行为 + 分层</h2>
+
+<table>
+<thead><tr><th>关注点</th><th>归属</th></tr></thead>
+<tbody>
+<tr><td>「哪种语言的规则」（扩展名、关键字、注释标记）</td><td><code>syntax::Syntax</code>（纯数据表）</td></tr>
+<tr><td>「一行里每个字符属于哪类」</td><td><code>Syntax::highlight</code>（状态机）</td></tr>
+<tr><td>「这一类长什么样（颜色）」</td><td><code>ui</code>（渲染唯一负责样式的层）</td></tr>
+</tbody>
+</table>
+
+<p><code>syntax.rs</code> 里<strong>不出现任何终端颜色</strong>：它只产出「类别」，
+由 <code>ui</code> 把类别映射成颜色。这样词法可以单独写测试，换主题也不必动规则。</p>
+
+<h2>动手</h2>
+
+<div class="task">
+<p><span class="tag">任务 1</span> 新建 <code>src/syntax.rs</code></p>
+<p>先是「类别」与「规则表」。注意 <code>|</code> 后缀表示「类型关键字」（另一类别颜色）；
+字符串引号也放进规则里——因为 C 的 <code>'</code> 是字符字面量，而 Rust 的 <code>'</code> 多半是
+<strong>生命周期</strong> <code>'a</code>，不能当成字符串起点：</p>
+<pre><code class="language-rust">/// A highlight category for a single character.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Highlight {
+    Normal,
+    Comment,
+    MultilineComment,
+    Keyword1,
+    Keyword2,
+    String,
+    Number,
+}
+
+/// One language's highlighting rules.
+pub struct Syntax {
+    /// Name shown in the status bar.
+    pub filetype: &amp;'static str,
+    /// File-name matches: `".c"` is an extension, `"Makefile"` a substring.
+    filematch: &amp;'static [&amp;'static str],
+    /// Keywords; a trailing `|` marks a type keyword ([`Highlight::Keyword2`]).
+    keywords: &amp;'static [&amp;'static str],
+    singleline_comment_start: Option&lt;&amp;'static str&gt;,
+    multiline_comment_start: Option&lt;&amp;'static str&gt;,
+    multiline_comment_end: Option&lt;&amp;'static str&gt;,
+    /// Quotes that open/close a string; empty means "don't highlight strings".
+    string_delimiters: &amp;'static [char],
+    /// Whether to highlight numbers.
+    highlight_numbers: bool,
+}
+
+/// The built-in language table. kilo ships only C; we add Rust.
+#[rustfmt::skip]
+static HLDB: &amp;[Syntax] = &amp;[
+    Syntax {
+        filetype: "c",
+        filematch: &amp;[".c", ".h", ".cpp"],
+        keywords: &amp;[
+            "switch", "if", "while", "for", "break", "continue", "return", "else", "struct",
+            "union", "typedef", "static", "enum", "class", "case",
+            "int|", "long|", "double|", "float|", "char|", "unsigned|", "signed|", "void|",
+        ],
+        singleline_comment_start: Some("//"),
+        multiline_comment_start: Some("/*"),
+        multiline_comment_end: Some("*/"),
+        string_delimiters: &amp;['"', '\''],
+        highlight_numbers: true,
+    },
+    Syntax {
+        filetype: "rs",
+        filematch: &amp;[".rs"],
+        keywords: &amp;[
+            "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
+            "extern", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move",
+            "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super", "trait",
+            "type", "unsafe", "use", "where", "while", "yield", "true", "false",
+            "bool|", "char|", "str|", "i8|", "i16|", "i32|", "i64|", "i128|", "isize|",
+            "u8|", "u16|", "u32|", "u64|", "u128|", "usize|", "f32|", "f64|",
+        ],
+        singleline_comment_start: Some("//"),
+        multiline_comment_start: Some("/*"),
+        multiline_comment_end: Some("*/"),
+        // Only `"`: a single quote is a lifetime (`'a`) far more often than a char literal.
+        string_delimiters: &amp;['"'],
+        highlight_numbers: true,
+    },
+];</code></pre>
+<p>按文件名挑规则：</p>
+<pre><code class="language-rust">impl Syntax {
+    /// Picks the rules for `path`, by extension or substring match.
+    #[must_use]
+    pub fn for_path(path: &amp;str) -&gt; Option&lt;&amp;'static Syntax&gt; {
+        let extension = path.rsplit_once('.').map(|(_, extension)| extension);
+        HLDB.iter().find(|syntax| syntax.matches(path, extension))
+    }
+
+    fn matches(&amp;self, path: &amp;str, extension: Option&lt;&amp;str&gt;) -&gt; bool {
+        self.filematch
+            .iter()
+            .any(|pattern| match pattern.strip_prefix('.') {
+                Some(pattern) =&gt; extension == Some(pattern),
+                None =&gt; path.contains(pattern),
+            })
+    }</code></pre>
+<p>核心：一个字符一个字符地扫，维护 <code>prev_sep</code>（上一个是不是分隔符）、
+<code>in_string</code> 与 <code>in_comment</code> 两个状态，返回「类别数组 + 本行是否还在注释里」。
+这是 <code>editorUpdateSyntax</code> 的直译：</p>
+<pre><code class="language-rust">    /// Categorises `chars`, returning the categories (aligned with `chars`) and whether
+    /// the row ends inside a multi-line comment — i.e. whether the next row starts in one.
+    #[must_use]
+    pub fn highlight(&amp;self, chars: &amp;[char], begins_in_comment: bool) -&gt; (Vec&lt;Highlight&gt;, bool) {
+        let mut hl = vec![Highlight::Normal; chars.len()];
+        let mut prev_sep = true;
+        let mut in_string: Option&lt;char&gt; = None;
+        let mut in_comment = begins_in_comment;
+        let mut i = 0;
+
+        while i &lt; chars.len() {
+            let c = chars[i];
+            let prev_hl = if i &gt; 0 { hl[i - 1] } else { Highlight::Normal };
+
+            // A single-line comment swallows the rest of the row.
+            let singleline = self.singleline_comment_start;
+            if in_string.is_none()
+                &amp;&amp; !in_comment
+                &amp;&amp; singleline.is_some_and(|start| starts_with(chars, i, start))
+            {
+                hl[i..].fill(Highlight::Comment);
+                break;
+            }
+
+            if in_string.is_none() {
+                if in_comment {
+                    if let Some(end) = self.multiline_comment_end {
+                        if starts_with(chars, i, end) {
+                            hl[i..i + end.chars().count()].fill(Highlight::MultilineComment);
+                            i += end.chars().count();
+                            in_comment = false;
+                            prev_sep = true;
+                            continue;
+                        }
+                    }
+                    hl[i] = Highlight::MultilineComment;
+                    i += 1;
+                    continue;
+                }
+                if let Some(start) = self.multiline_comment_start {
+                    if starts_with(chars, i, start) {
+                        hl[i..i + start.chars().count()].fill(Highlight::MultilineComment);
+                        i += start.chars().count();
+                        in_comment = true;
+                        continue;
+                    }
+                }
+            }
+
+            if !self.string_delimiters.is_empty() {
+                if let Some(quote) = in_string {
+                    hl[i] = Highlight::String;
+                    if c == '\\' &amp;&amp; i + 1 &lt; chars.len() {
+                        hl[i + 1] = Highlight::String;
+                        i += 2;
+                        continue;
+                    }
+                    if c == quote {
+                        in_string = None;
+                    }
+                    i += 1;
+                    prev_sep = true;
+                    continue;
+                } else if self.string_delimiters.contains(&amp;c) {
+                    in_string = Some(c);
+                    hl[i] = Highlight::String;
+                    i += 1;
+                    continue;
+                }
+            }
+
+            if self.highlight_numbers
+                &amp;&amp; ((c.is_ascii_digit() &amp;&amp; (prev_sep || prev_hl == Highlight::Number))
+                    || (c == '.' &amp;&amp; prev_hl == Highlight::Number))
+            {
+                hl[i] = Highlight::Number;
+                i += 1;
+                prev_sep = false;
+                continue;
+            }
+
+            if prev_sep {
+                if let Some((len, second)) = self.match_keyword(chars, i) {
+                    let kind = if second {
+                        Highlight::Keyword2
+                    } else {
+                        Highlight::Keyword1
+                    };
+                    hl[i..i + len].fill(kind);
+                    i += len;
+                    prev_sep = false;
+                    continue;
+                }
+            }
+
+            prev_sep = is_separator(c);
+            i += 1;
+        }
+
+        (hl, in_comment)
+    }</code></pre>
+<p>三个小工具（关键字匹配、前缀判断、分隔符集合）：</p>
+<pre><code class="language-rust">    /// Length of a keyword starting at `at`, and whether it is a "type" keyword.
+    fn match_keyword(&amp;self, chars: &amp;[char], at: usize) -&gt; Option&lt;(usize, bool)&gt; {
+        self.keywords.iter().find_map(|keyword| {
+            let second = keyword.ends_with('|');
+            let name = keyword.trim_end_matches('|');
+            let len = name.chars().count();
+            let boundary = chars.get(at + len).is_none_or(|&amp;c| is_separator(c));
+            (boundary &amp;&amp; starts_with(chars, at, name)).then_some((len, second))
+        })
+    }
+}
+
+/// Whether `pattern` occurs in `chars` starting at `at`.
+fn starts_with(chars: &amp;[char], at: usize, pattern: &amp;str) -&gt; bool {
+    pattern
+        .chars()
+        .enumerate()
+        .all(|(offset, expected)| chars.get(at + offset) == Some(&amp;expected))
+}
+
+/// Whether `c` ends a word (kilo's separator set).
+fn is_separator(c: char) -&gt; bool {
+    c.is_whitespace() || ",.()+-/*=~%&lt;&gt;[];".contains(c)
+}</code></pre>
+<p>加几个测试。关键字/数字/注释、类型关键字、字符串转义、跨行注释各一：</p>
+<pre><code class="language-rust">    #[test]
+    fn keywords_numbers_and_comments() {
+        let syntax = Syntax::for_path("x.c").unwrap();
+        let text = "return 42; // note";
+        let (hl, _) = syntax.highlight(&amp;chars(text), false);
+
+        assert_eq!(hl[0], Highlight::Keyword1); // return
+        assert_eq!(hl[7], Highlight::Number); // 4
+        assert_eq!(hl[8], Highlight::Number); // 2
+        let comment = text.find("//").unwrap();
+        assert_eq!(hl[comment], Highlight::Comment);
+    }
+
+    #[test]
+    fn multiline_comments_carry_across_rows() {
+        let syntax = Syntax::for_path("x.c").unwrap();
+
+        let (_, ends) = syntax.highlight(&amp;chars("/* open"), false);
+        assert!(ends);
+
+        let (hl, ends) = syntax.highlight(&amp;chars("still */ int x;"), true);
+        assert!(!ends);
+        assert_eq!(hl[0], Highlight::MultilineComment);
+        assert_eq!(hl[9], Highlight::Keyword2); // int, after the comment closes
+    }
+
+    #[test]
+    fn rust_keywords_strings_and_primitive_types() {
+        let syntax = Syntax::for_path("main.rs").unwrap();
+        let text = "let n: u32 = 1; // note";
+        let (hl, _) = syntax.highlight(&amp;chars(text), false);
+
+        assert_eq!(hl[0], Highlight::Keyword1); // let
+        assert_eq!(hl[7], Highlight::Keyword2); // u32
+        assert_eq!(hl[13], Highlight::Number); // 1
+        assert_eq!(hl[text.find("//").unwrap()], Highlight::Comment);
+    }
+
+    #[test]
+    fn rust_lifetimes_do_not_open_a_string() {
+        let syntax = Syntax::for_path("x.rs").unwrap();
+        let text = "fn f&lt;'a&gt;(s: &amp;'a str) {}";
+        let (hl, _) = syntax.highlight(&amp;chars(text), false);
+
+        // The apostrophe is a lifetime here, not a char-literal quote: nothing is swallowed.
+        assert_eq!(hl[text.find('\'').unwrap()], Highlight::Normal);
+        assert_eq!(hl[text.find("str").unwrap()], Highlight::Keyword2);
+    }</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 2</span> 改 <code>src/row.rs</code>：让每行携带高亮</p>
+<p>给 <code>Segment</code> 加一个 <code>highlight</code> 字段；给 <code>Row</code> 加两个字段
+（每字符的类别 + 是否终止于多行注释）：</p>
+<pre><code class="language-rust">use crate::syntax::Highlight;
+
+/// A run of rendered text plus its style: syntax category and search-match overlay.
+pub struct Segment {
+    /// Text to print (tabs expanded; wide chars padded at the window edges).
+    pub text: String,
+    /// Syntax-highlight category of this run.
+    pub highlight: Highlight,
+    /// Whether this run is part of the current search match.
+    pub matched: bool,
+}
+
+/// A single line of text.
+pub struct Row {
+    chars: Vec<char>,
+    /// Syntax category per char (same length as `chars`).
+    hl: Vec&lt;Highlight&gt;,
+    /// Whether this row ends inside a multi-line comment.
+    hl_open_comment: bool,
+    /// Char range of the current search match, if any.
+    match_range: Option&lt;Range&lt;usize&gt;&gt;,
+}</code></pre>
+<p><code>new</code> 里把 <code>hl</code> 填成等长的 <code>Normal</code>；再加读写类别与注释状态的访问器：</p>
+<pre><code class="language-rust">    /// The row's characters (read-only, for the syntax lexer).
+    #[must_use]
+    pub fn chars(&amp;self) -&gt; &amp;[char] {
+        &amp;self.chars
+    }
+
+    /// The syntax categories, one per char.
+    #[must_use]
+    pub fn highlight(&amp;self) -&gt; &amp;[Highlight] {
+        &amp;self.hl
+    }
+
+    /// Replaces the syntax categories (length must match `chars`).
+    pub fn set_highlight(&amp;mut self, hl: Vec&lt;Highlight&gt;) {
+        self.hl = hl;
+    }
+
+    /// Whether this row ends inside a multi-line comment.
+    #[must_use]
+    pub fn open_comment(&amp;self) -&gt; bool {
+        self.hl_open_comment
+    }
+
+    /// Sets whether this row ends inside a multi-line comment.
+    pub fn set_open_comment(&amp;mut self, open: bool) {
+        self.hl_open_comment = open;
+    }</code></pre>
+<p><strong>关键不变式</strong>：<code>hl</code> 必须与 <code>chars</code> 等长。所以每个改字符的方法
+都要同步改 <code>hl</code>（插入补 <code>Normal</code>、删除删一格、<code>split_off</code>/<code>append</code> 一起切）：</p>
+<pre><code class="language-rust">    pub fn insert_char(&amp;mut self, cx: usize, ch: char) {
+        let at = cx.min(self.len());
+        self.chars.insert(at, ch);
+        self.hl.insert(at, Highlight::Normal);
+    }
+
+    pub fn delete_char(&amp;mut self, cx: usize) {
+        if cx &lt; self.len() {
+            self.chars.remove(cx);
+            self.hl.remove(cx);
+        }
+    }
+
+    pub fn split_off(&amp;mut self, cx: usize) -&gt; Self {
+        let at = cx.min(self.len());
+        Self {
+            chars: self.chars.split_off(at),
+            hl: self.hl.split_off(at),
+            hl_open_comment: false,
+            match_range: None,
+        }
+    }
+
+    pub fn append(&amp;mut self, other: &amp;mut Row) {
+        self.chars.append(&amp;mut other.chars);
+        self.hl.append(&amp;mut other.hl);
+    }</code></pre>
+<p><code>render_window</code> 取当前字符的类别，写进片段；<code>push_segment</code> 的合并条件
+也从「命中与否」变成「<strong>类别与命中都相同</strong>」：</p>
+<pre><code class="language-rust">            let highlight = self.hl.get(index).copied().unwrap_or(Highlight::Normal);
+            let matched = self
+                .match_range
+                .as_ref()
+                .is_some_and(|range| range.contains(&amp;index));
+
+            if ch == '\t' || start &lt; coloff || col &gt; end {
+                // Expand tabs to spaces; pad a wide char straddling the edge with spaces.
+                let from = start.max(coloff);
+                let to = col.min(end);
+                push_segment(&amp;mut segments, &amp;" ".repeat(to - from), highlight, matched);
+            } else {
+                let mut buf = [0u8; 4];
+                push_segment(&amp;mut segments, ch.encode_utf8(&amp;mut buf), highlight, matched);
+            }</code></pre>
+<pre><code class="language-rust">/// Appends `text` to `segments`, merging it into the previous run when both style keys agree.
+fn push_segment(segments: &amp;mut Vec&lt;Segment&gt;, text: &amp;str, highlight: Highlight, matched: bool) {
+    if text.is_empty() {
+        return;
+    }
+    match segments.last_mut() {
+        Some(last) if last.highlight == highlight &amp;&amp; last.matched == matched =&gt; {
+            last.text.push_str(text);
+        }
+        _ =&gt; segments.push(Segment {
+            text: text.to_owned(),
+            highlight,
+            matched,
+        }),
+    }
+}</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 3</span> 改 <code>src/document.rs</code>：持有语法并维护高亮</p>
+<p>域模型多一个 <code>syntax</code> 字段（引用静态表），并暴露 <code>filetype</code> 给状态栏：</p>
+<pre><code class="language-rust">use crate::{row::Row, syntax::Syntax};
+
+pub struct Document {
+    rows: Vec&lt;Row&gt;,
+    filename: Option&lt;String&gt;,
+    dirty: bool,
+    syntax: Option&lt;&amp;'static Syntax&gt;,
+}
+
+    /// Filetype name for the status bar (e.g. `"c"`, or `"no ft"` when unknown).
+    #[must_use]
+    pub fn filetype(&amp;self) -&gt; &amp;'static str {
+        self.syntax.map_or("no ft", |syntax| syntax.filetype)
+    }</code></pre>
+<p>三个私有方法：全量重算、<strong>增量</strong>重算（只在注释状态变化时继续往下）、按文件名选语法：</p>
+<pre><code class="language-rust">    /// Highlights all rows from scratch. Call this after the syntax changes.
+    fn highlight_all(&amp;mut self) {
+        let Some(syntax) = self.syntax else {
+            return;
+        };
+        let mut open_comment = false;
+        for row in &amp;mut self.rows {
+            let (hl, ends) = syntax.highlight(row.chars(), open_comment);
+            row.set_highlight(hl);
+            row.set_open_comment(ends);
+            open_comment = ends;
+        }
+    }
+
+    /// Re-highlights from row `from`, continuing only while the open-comment state changes
+    /// (the same short-circuit kilo uses).
+    fn refresh_syntax(&mut self, from: usize) {
+        let Some(syntax) = self.syntax else {
+            return;
+        };
+        let mut open_comment = from &gt; 0 &amp;&amp; self.rows[from - 1].open_comment();
+        for row in &amp;mut self.rows[from..] {
+            let (hl, ends) = syntax.highlight(row.chars(), open_comment);
+            let changed = row.open_comment() != ends;
+            row.set_highlight(hl);
+            row.set_open_comment(ends);
+            if !changed {
+                break;
+            }
+            open_comment = ends;
+        }
+    }
+
+    /// Picks a syntax from the file name and (re-)highlights the whole document.
+    fn select_syntax(&mut self) {
+        self.syntax = self.filename.as_deref().and_then(Syntax::for_path);
+        self.highlight_all();
+    }</code></pre>
+<p><code>new</code> 末尾调用 <code>select_syntax()</code>；<code>set_filename</code> 也调用它（另存为
+<code>.c</code> 后立刻变色）。每个改文本的方法末尾加一句 <code>refresh_syntax(...)</code>：</p>
+<pre><code class="language-rust">    pub fn set_filename(&amp;mut self, filename: String) {
+        self.filename = Some(filename);
+        self.select_syntax();
+    }
+
+    pub fn insert_char(&amp;mut self, cy: usize, cx: usize, ch: char) {
+        // …改动这一行…
+        self.dirty = true;
+        self.refresh_syntax(cy);
+    }
+
+    pub fn delete_char(&amp;mut self, cy: usize, cx: usize) {
+        // …
+        self.refresh_syntax(cy);
+    }
+
+    pub fn insert_empty_row(&amp;mut self, at: usize) {
+        // …
+        self.refresh_syntax(at);
+    }
+
+    pub fn split_line(&amp;mut self, cy: usize, cx: usize) {
+        // …
+        self.refresh_syntax(cy);
+    }
+
+    pub fn join_lines(&amp;mut self, cy: usize) -&gt; usize {
+        // …
+        self.refresh_syntax(cy - 1);
+        col
+    }</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 4</span> 改 <code>src/ui.rs</code>：类别 → 颜色</p>
+<p>逐段打印时按类别上色、命中则叠反显。颜色映射放在 <code>ui</code>（渲染唯一负责样式的地方），
+用的正是 kilo 的 ANSI 槽位：</p>
+<pre><code class="language-rust">/// Writes one rendered segment with its syntax color and/or match overlay.
+fn draw_segment(stdout: &amp;mut io::Stdout, segment: &amp;Segment) -&gt; io::Result&lt;()&gt; {
+    let color = highlight_color(segment.highlight);
+    if let Some(color) = color {
+        queue!(stdout, SetForegroundColor(color))?;
+    }
+    if segment.matched {
+        queue!(stdout, SetAttribute(Attribute::Reverse))?;
+    }
+    queue!(stdout, Print(&amp;segment.text))?;
+    if segment.matched {
+        queue!(stdout, SetAttribute(Attribute::Reset))?;
+    }
+    if color.is_some() {
+        queue!(stdout, SetForegroundColor(Color::Reset))?;
+    }
+    Ok(())
+}
+
+/// The terminal color for a syntax category (`None` = the default foreground).
+///
+/// These are the standard ANSI slots kilo uses (`editorSyntaxToColor`): cyan comments,
+/// yellow keywords, green type keywords, magenta strings, red numbers.
+fn highlight_color(highlight: Highlight) -&gt; Option&lt;Color&gt; {
+    Some(match highlight {
+        Highlight::Normal =&gt; return None,
+        Highlight::Comment | Highlight::MultilineComment =&gt; Color::DarkCyan,
+        Highlight::Keyword1 =&gt; Color::DarkYellow,
+        Highlight::Keyword2 =&gt; Color::DarkGreen,
+        Highlight::String =&gt; Color::DarkMagenta,
+        Highlight::Number =&gt; Color::DarkRed,
+    })
+}</code></pre>
+<p>正文循环里那句 <code>Print(segment.text)</code> 换成 <code>draw_segment(&amp;mut stdout, &amp;segment)?</code>。
+再给状态栏右侧补上 <code>filetype</code>：</p>
+<pre><code class="language-rust">    let right = truncate(
+        &amp;format!("{} | {}/{}", document.filetype(), cy + 1, document.len()),
+        cols,
+    );</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 5</span> 改 <code>src/lib.rs</code>：注册模块</p>
+<pre><code class="language-rust">pub mod document;
+pub mod editor;
+pub mod row;
+pub mod syntax;
+pub mod tui;
+pub mod ui;</code></pre>
+</div>
+
+<div class="task">
+<p><span class="tag">任务 6</span> 运行 + 测试 + clippy</p>
+<pre><code class="language-bash">cargo run -- sample.c   # 看注释 / 字符串 / 数字 / 关键字各就各位
+cargo test              # 29 个单元测试
+cargo clippy --all-targets -- -D warnings
+cargo fmt</code></pre>
+<p>试一个跨行注释：写 <code>/*</code> 后回车继续打字，整段（含空行）都应是注释色。</p>
+</div>
+
+<h2>逐段拆解</h2>
+
+<ul>
+<li><strong>规则与词法分离</strong>：<code>Syntax</code> 是纯数据；加一门语言只加一条 <code>HLDB</code> 表项，
+  不用碰 <code>highlight</code>。这就是「数据驱动」。</li>
+<li><strong>状态机</strong>：扫描时只记三个状态——<code>prev_sep</code>、<code>in_string</code>、
+  <code>in_comment</code>。关键字/数字只在 <code>prev_sep</code> 为真时开始，避免把 <code>intfoo</code> 里的
+  <code>int</code> 也点亮。</li>
+<li><strong>跨行注释靠「返回值」传递</strong>：<code>highlight</code> 返回「本行结束时是否仍在注释中」，
+  下一行把这当作 <code>begins_in_comment</code>。行与行之间只通过这一个<strong>布尔</strong>耦合。</li>
+<li><strong>增量更新</strong>：编辑某行只重算它；只有当它的「注释开闭状态」发生变化时才继续重算下一行——
+  因为再往下的行只依赖这个布尔，不变就不必动。这是 kilo 的短路策略。</li>
+<li><strong><code>hl</code> 与 <code>chars</code> 等长</strong>：一个必须被维护的<strong>不变式</strong>。
+  所以每个改字符的方法都顺手改 <code>hl</code>；<code>render_window</code> 仍用 <code>hl.get(index)</code>
+  防御性取值，万一错位也不会 panic。</li>
+<li><strong>样式归 <code>ui</code></strong>：<code>syntax</code> 只给类别，颜色映射在 <code>ui</code>。
+  <code>DarkCyan</code> 等对应 kilo 的 ANSI 31–36 槽位。</li>
+</ul>
+
+<h2>小测</h2>
+
+<div class="quiz">
+<p class="q">1. 把「规则」做成数据表、把「词法」写成函数，最大的好处是？</p>
+<ul>
+<li>加一门语言只需新增一条表项，不必改词法代码</li>
+<li>可以让程序启动更快</li>
+<li>可以少写单元测试</li>
+<li>可以让颜色自动适配终端主题</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。数据与行为分离后，语言规则是「填表」，词法是稳定的引擎。加上「样式归 <code>ui</code>」，
+三者各司其职。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">2. 为什么 <code>highlight</code> 要把「本行是否仍在注释里」返回出去？</p>
+<ul>
+<li>因为多行注释可以跨行，下一行需要知道从哪种状态开始</li>
+<li>因为 <code>Vec&lt;Highlight&gt;</code> 装不下这个信息</li>
+<li>因为它要和搜索命中做区分</li>
+<li>因为返回值比输出参数更快</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。行是有界的处理单位，而 <code>/* … */</code> 可以跨行；把这个布尔状态一行行传下去，
+就能正确高亮整段注释。</p>
+</details>
+</div>
+
+<div class="quiz">
+<p class="q">3. 编辑一行后，<code>refresh_syntax</code> 什么时候可以停下？</p>
+<ul>
+<li>当这一行的「注释开闭状态」没有变化时</li>
+<li>处理完当前行就必须停</li>
+<li>一直到文档最后一行都不能停</li>
+<li>当遇到空行时停下</li>
+</ul>
+<details>
+<summary>看答案</summary>
+<p>第一个。后续行的高亮只依赖「上一行是否在注释里」这一个布尔；它没变，后面就都不受影响，
+可以立即停。</p>
+</details>
+</div>
+
+<h2>主要资料</h2>
+<ul class="ref-list">
+<li>对应章节：<a href="https://viewsourcecode.org/snaptoken/kilo/07.syntaxHighlighting.html">snaptoken 第 7 章</a>
+  （<code>editorUpdateSyntax</code> / <code>HLDB</code> / <code>editorSyntaxToColor</code>）。</li>
+<li>数据与行为分离、把行为作为参数：<em>m04-zero-cost</em>。</li>
+<li>速查：<a href="../reference/modern-rust-idioms.html">现代 Rust 惯用法</a>
+  （<code>Option::is_some_and</code>、<code>then_some</code>）。</li>
+</ul>
+
+<div class="callout">
+<p><span class="tag">收尾</span> 到这里，kilo 的核心——打开 / 显示 / 移动 / 编辑 / 保存 / 查找——
+再加上语法高亮就完整了。与原版 <code>kilo.c</code> 还有一些<strong>细节差距</strong>
+（<kbd>PageUp</kbd>/<kbd>PageDown</kbd>、<kbd>Tab</kbd> 插入、控制字符的显示、若干提示文案），
+留待一次整体回顾时再决定取舍。</p>
+</div>
+
+<div class="lesson-nav">
+  <a class="prev" href="0010-find.html">← 第 10 课 · 查找</a>
+  <a class="next" href="../index.html">课程目录 →</a>
+</div>
+
+<p class="footer-note">kilo-rs 课程 · Lesson 0011。总目录见 <a href="../index.html">课程目录</a>。</p>
+
+<script src="../assets/prism.min.js" defer></script>
+</body>
+</html>

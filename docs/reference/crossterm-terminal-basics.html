@@ -100,7 +100,39 @@ loop {
 <p>注意单个 <kbd>Esc</kbd> 键是 <code>KeyCode::Esc</code>；方向键会被 crossterm 解析成对应的
 <code>KeyCode</code>，你<strong>不用</strong>像 C 版那样自己读 <code>\x1b[A</code> 字节序列。</p>
 
-<h2>五、常见坑</h2>
+<h2>五、样式与清行</h2>
+
+<p>状态栏、命中高亮这类「重点」用<strong>属性（attribute）</strong>表示，而不是自己拼 ANSI 字节。
+<code>crossterm::style</code> 提供可组合的 <code>SetAttribute</code>；设了属性，写完一定要 <code>Reset</code>，
+否则会「漏」到后面的输出：</p>
+
+<pre><code class="language-rust">use crossterm::{queue, style::{Attribute, Print, SetAttribute}};
+
+// Reverse a run of text, then restore the default style
+queue!(
+    stdout,
+    SetAttribute(Attribute::Reverse),
+    Print("status bar"),
+    SetAttribute(Attribute::Reset),
+)?;</code></pre>
+
+<p>清行要连「背景」一起清：<strong>先设属性，再清行</strong>，整行才会被同一底色铺满——
+这就是状态栏看起来像「一条栏」的原因。</p>
+
+<pre><code class="language-rust">use crossterm::terminal::{Clear, ClearType};
+
+queue!(
+    stdout,
+    MoveTo(0, row),
+    SetAttribute(Attribute::Reverse),
+    Clear(ClearType::CurrentLine), // fill the row with the current (reverse) background
+    Print(left),
+)?;</code></pre>
+
+<p>刷新顺序也有讲究：本课程每帧先 <code>Clear(ClearType::All)</code> 再逐行画，最后用 <code>MoveTo</code>
+把光标放回编辑器位置并 <code>cursor::Show</code>。刷新期间光标先 <code>cursor::Hide</code>，避免中途闪烁。</p>
+
+<h2>六、常见坑</h2>
 
 <ul>
 <li><strong>换行变楼梯</strong>：raw mode 下写 <code>\n</code> 只换行不回车，必须写 <code>\r\n</code>。</li>
@@ -112,7 +144,7 @@ loop {
   解法是 panic hook（第 2 课）。</li>
 </ul>
 
-<h2>六、错误处理</h2>
+<h2>七、错误处理</h2>
 
 <p>本项目 <code>main</code> 用 <code>color-eyre</code>：</p>
 <pre><code class="language-rust">use color_eyre::Result;
@@ -123,7 +155,7 @@ fn main() -&gt; Result&lt;()&gt; {
     Ok(())
 }</code></pre>
 
-<h2>七、权威来源</h2>
+<h2>八、权威来源</h2>
 <ul class="ref-list">
 <li><a href="https://docs.rs/crossterm/0.29.0/crossterm/">crossterm 0.29 文档</a> — 所有 API 的最终依据。</li>
 <li><a href="https://github.com/apollographql/rust-best-practices">Apollo《Rust Best Practices》</a> — 错误处理与惯用法依据。</li>
@@ -132,8 +164,8 @@ fn main() -&gt; Result&lt;()&gt; {
 </ul>
 
 <div class="lesson-nav">
-  <a class="prev" href="modern-rust-idioms.html">← 参考 · 现代 Rust 惯用法</a>
-  <a class="next" href="../lessons/0001-raw-mode-and-events.html">第 1 课 · 接管终端 →</a>
+  <a class="prev" href="../lessons/0001-raw-mode-and-events.html">← 第 1 课 · 接管终端</a>
+  <a class="next" href="modern-rust-idioms.html">参考 · 现代 Rust 惯用法 →</a>
 </div>
 
 <script src="../assets/prism.min.js" defer></script>
