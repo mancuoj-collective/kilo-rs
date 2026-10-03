@@ -269,6 +269,26 @@ impl Editor {
         self.cx = self.cx.min(self.current_line_len());
     }
 
+    /// Moves the cursor up one screen (kilo's `PAGE_UP`), clamping at the top.
+    pub fn page_up(&mut self, rows: usize) {
+        self.cy = self.rowoff;
+        for _ in 0..rows {
+            self.move_cursor(Move::Up);
+        }
+    }
+
+    /// Moves the cursor down one screen (kilo's `PAGE_DOWN`), clamping at the last row.
+    pub fn page_down(&mut self, rows: usize) {
+        self.cy = self
+            .rowoff
+            .saturating_add(rows)
+            .saturating_sub(1)
+            .min(self.document.len());
+        for _ in 0..rows {
+            self.move_cursor(Move::Down);
+        }
+    }
+
     /// Adjusts the viewport so the cursor stays visible; horizontally by **display column** `rx`.
     pub fn scroll(&mut self, rows: usize, cols: usize) {
         let rx = self.current_rx();
@@ -419,5 +439,25 @@ mod tests {
         assert_eq!(e.cursor(), (0, 1));
         e.restore_view(saved);
         assert_eq!(e.cursor(), (0, 0));
+    }
+
+    #[test]
+    fn page_up_moves_a_screen() {
+        let lines: Vec<String> = (0..50).map(|i| format!("line {i}")).collect();
+        let mut e = Editor::new(&lines, None);
+        for _ in 0..40 {
+            e.move_cursor(Move::Down);
+        }
+        e.scroll(10, 40); // rowoff = 31
+        e.page_up(10); // to the top of the screen, then up 10 more
+        assert_eq!(e.cursor(), (0, 21));
+    }
+
+    #[test]
+    fn page_down_moves_a_screen() {
+        let lines: Vec<String> = (0..50).map(|i| format!("line {i}")).collect();
+        let mut e = Editor::new(&lines, None);
+        e.page_down(10); // 0 + 10 - 1, then down 10
+        assert_eq!(e.cursor(), (0, 19));
     }
 }

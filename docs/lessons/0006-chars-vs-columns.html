@@ -484,7 +484,7 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 公式 <code>TAB_STOP - col % TAB_STOP</code> 就是「离下一个制表位还差多少列」。</p>
 <p>为什么必须这样——为了<strong>对齐</strong>：</p>
 <pre><code>a\tX          a . . . . . . X        # X 在第 8 列
-abcdefg\tY    a b c d e f g Y        # Y 在第 8 列   ✅ 对齐
+abcdefg\tY    a b c d e f g Y        # Y 在第 8 列   对齐
 
 （若只 +8：X 在第 9 列、Y 在第 15 列，错位）</code></pre>
 <p>这也是真实终端敲 Tab 的行为，所以 <code>advance</code> 算出的列宽和终端显示一致。</p>

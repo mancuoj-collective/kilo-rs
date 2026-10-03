@@ -46,7 +46,7 @@
 
 <p>写「把当前行接到上一行」时，你会撞上本课最典型的冲突：</p>
 
-<pre><code class="language-rust">// ❌ 同时可变借用 self.rows 的两个元素
+<pre><code class="language-rust">// bad: two mutable borrows of self.rows at once
 let prev = &amp;mut self.rows[self.cy - 1];
 let cur = &amp;mut self.rows[self.cy];
 prev.append(cur);</code></pre>
@@ -226,7 +226,7 @@ impl Editor {
         self.dirty = true;
     }
 
-    // … move_cursor / scroll / current_line_len / current_rx 与第 6 课相同</code></pre>
+    // … move_cursor / scroll / current_line_len / current_rx are as in lesson 6</code></pre>
 <p>测试里所有 <code>Editor::new(...)</code> 补上第二参数 <code>None</code>，并新增三个编辑测试：</p>
 <pre><code class="language-rust">    #[test]
     fn insert_char_updates_row_and_cursor() {
@@ -273,7 +273,7 @@ impl Editor {
     };
 
     let mut editor = Editor::new(&amp;lines, path);
-    // … Terminal::enter() 之后：
+    // … after Terminal::enter():
     loop {
         match event::read()? {
             Event::Key(key) if key.is_press() =&gt; {
@@ -309,7 +309,7 @@ impl Editor {
 <pre><code class="language-rust">    let text_height = height.saturating_sub(1); // keep the bottom row for the status line
 
     editor.scroll(text_height, width);
-    // … 正文循环改成 for y in 0..text_height { … }
+    // … change the body loop to for y in 0..text_height { … }
 
     // Status line on the bottom row.
     let name = editor.filename().unwrap_or("[No Name]");
@@ -414,9 +414,9 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 <ul class="ref-list">
 <li>对应章节：<a href="https://www.flenker.blog/hecto-chapter-5/">hecto 第 5 章 · A Text Editor</a>、
   <a href="https://viewsourcecode.org/snaptoken/kilo/04.aTextViewer.html">snaptoken 第 4 章</a>（编辑与保存）。</li>
-<li>借用冲突：本课程参考 <em>m03-mutability</em>（E0499 / E0502）；
-  反模式见 <em>m15-anti-pattern</em>（「用 clone 绕过借用检查」）。</li>
-<li>错误处理：<em>m06-error-handling</em>（可预期失败用 <code>Result</code> + <code>?</code>）。</li>
+<li>借用冲突：本课程参考 <code>m03-mutability</code>（E0499 / E0502）；
+  反模式见 <code>m15-anti-pattern</code>（「用 clone 绕过借用检查」）。</li>
+<li>错误处理：<code>m06-error-handling</code>（可预期失败用 <code>Result</code> + <code>?</code>）。</li>
 <li>速查：<a href="../reference/modern-rust-idioms.html">现代 Rust 惯用法</a> ·
   <a href="../reference/architecture.html">架构与文件结构</a>。</li>
 </ul>

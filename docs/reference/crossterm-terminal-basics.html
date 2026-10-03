@@ -21,7 +21,7 @@
 <tbody>
 <tr><td>输入</td><td>按行交给程序</td><td>每次按键立即交给程序</td></tr>
 <tr><td>回显</td><td>终端自动显示</td><td>程序自己决定显示什么</td></tr>
-<tr><td>Ctrl-C / Ctrl-Q</td><td>被终端解释为信号</td><td>作为普通按键交给程序</td></tr>
+<tr><td>Ctrl-C / Ctrl-Z（信号）<br>Ctrl-S / Ctrl-Q（流控）</td><td>被终端截走，不交给程序</td><td>作为普通按键交给程序</td></tr>
 <tr><td>输出 <code>\n</code></td><td>换行并回到行首</td><td>只换行，需要写 <code>\r\n</code></td></tr>
 </tbody>
 </table>

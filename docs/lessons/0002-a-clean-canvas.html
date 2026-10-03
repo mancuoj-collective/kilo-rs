@@ -317,7 +317,8 @@ fn welcome_line(cols: u16) -&gt; String {
 </ul>
 <details>
 <summary>看答案</summary>
-<p>第一个。所以换行要放在「行与行之间」（<code>if y &gt; 0</code>），而不是每行都追加。
+<p>第一个。所以换行只加在「行与行之间」——用 <code>if y + 1 &lt; rows</code> 明确表达
+「不是最后一行才换行」，而不是每行都追加。
 这也是为什么原版 kilo 会预留两行给状态栏——底行绝不能多写一个换行。</p>
 </details>
 </div>

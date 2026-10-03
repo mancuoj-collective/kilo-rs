@@ -492,7 +492,7 @@ pub struct Document {
     }
 
     pub fn insert_char(&amp;mut self, cy: usize, cx: usize, ch: char) {
-        // …改动这一行…
+        // …edit this row…
         self.dirty = true;
         self.refresh_syntax(cy);
     }
@@ -653,7 +653,7 @@ cargo fmt</code></pre>
 <ul class="ref-list">
 <li>对应章节：<a href="https://viewsourcecode.org/snaptoken/kilo/07.syntaxHighlighting.html">snaptoken 第 7 章</a>
   （<code>editorUpdateSyntax</code> / <code>HLDB</code> / <code>editorSyntaxToColor</code>）。</li>
-<li>数据与行为分离、把行为作为参数：<em>m04-zero-cost</em>。</li>
+<li>数据与行为分离、把行为作为参数：<code>m04-zero-cost</code>。</li>
 <li>速查：<a href="../reference/modern-rust-idioms.html">现代 Rust 惯用法</a>
   （<code>Option::is_some_and</code>、<code>then_some</code>）。</li>
 </ul>

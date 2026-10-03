@@ -63,6 +63,8 @@
   —— 本课程的风格约定：import 顺序、<code>let-else</code>、RAII、错误处理、字符串转换……</li>
 <li><a href="reference/architecture.html">架构与文件结构</a>
   —— 什么时候该分文件、什么是深模块、<code>kilo-rs</code> 的目标结构。</li>
+<li><a href="reference/wrap-up.html">收尾修订</a>
+  —— 11 课之后对照原版补的控制字符、翻页、<kbd>Tab</kbd>、保存失败等几处修补。</li>
 </ul>
 
 <h2>课程的约定</h2>
@@ -72,8 +74,8 @@
   （<code>expect</code>、panic 信息）一律英文；课程正文保持中文。理由：中文里「字符」等词有歧义，
   而英文术语精确（<code>code point</code> / <code>column</code> / <code>byte</code>），也与 Rust 生态一致。</li>
 <li><strong>每课都能跑</strong>：任何一步都应能 <code>cargo run</code> 并观察到变化。</li>
-<li><strong>质量门</strong>：以 <code>cargo clippy --all-targets -- -D warnings</code> 零告警为底线，
-  <code>unsafe</code> 一律禁止。</li>
+<li><strong>质量门</strong>：<code>cargo clippy --all-targets -- -D warnings</code> 零告警、
+  <code>cargo fmt --check</code> 干净，<code>unsafe</code> 一律禁止。</li>
 <li><strong>先体验问题，再引入解法</strong>；重构只做「行为不变的搬家」，绝不一边重构一边加功能。</li>
 </ul>
 

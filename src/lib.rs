@@ -2,7 +2,8 @@
 //!
 //! Logic lives in the library (so integration tests can reach it); `main.rs` is a thin
 //! shell. Terminal lifecycle is in [`tui`], the buffer in [`document`], cursor and
-//! viewport in [`editor`], and rendering in [`ui`].
+//! viewport in [`editor`], the line and syntax model in [`row`] / [`syntax`], and
+//! rendering in [`ui`].
 
 pub mod document;
 pub mod editor;
@@ -83,6 +84,7 @@ fn handle_key(editor: &mut Editor, key: KeyEvent, quit_times: &mut u8) -> io::Re
         KeyCode::Char('f') if ctrl => find(editor)?,
         KeyCode::Char(ch) if !ctrl => editor.insert_char(ch),
         KeyCode::Enter => editor.insert_newline(),
+        KeyCode::Tab => editor.insert_char('\t'),
         KeyCode::Backspace => editor.delete_char(),
         // Forward delete: step right, then delete what is now behind the cursor.
         KeyCode::Delete => {
@@ -95,6 +97,14 @@ fn handle_key(editor: &mut Editor, key: KeyEvent, quit_times: &mut u8) -> io::Re
         KeyCode::Right => editor.move_cursor(Move::Right),
         KeyCode::Home => editor.move_cursor(Move::Home),
         KeyCode::End => editor.move_cursor(Move::End),
+        KeyCode::PageUp => {
+            let (_, rows) = terminal::size()?;
+            editor.page_up(text_height(rows));
+        }
+        KeyCode::PageDown => {
+            let (_, rows) = terminal::size()?;
+            editor.page_down(text_height(rows));
+        }
         _ => {}
     }
     *quit_times = QUIT_TIMES;
@@ -110,20 +120,27 @@ fn save(editor: &mut Editor) -> io::Result<()> {
         };
         editor.set_filename(name);
     }
-    let bytes = editor.save()?;
-    editor.set_message(format!("{bytes} bytes written to disk"));
+    match editor.save() {
+        Ok(bytes) => editor.set_message(format!("{bytes} bytes written to disk")),
+        // Don't quit on a write error; report it and keep editing (kilo does the same).
+        Err(error) => editor.set_message(format!("Can't save! {error}")),
+    }
     Ok(())
 }
 
 /// Ctrl-F: live search; `Esc` restores the cursor, `Enter` keeps it.
 fn find(editor: &mut Editor) -> io::Result<()> {
     let saved = editor.view_state();
-    let query = prompt_with(editor, "Search: ", |editor, query, key| match key {
-        KeyCode::Enter | KeyCode::Esc => {}
-        KeyCode::Up | KeyCode::Left => editor.find(query, Find::Prev),
-        KeyCode::Down | KeyCode::Right => editor.find(query, Find::Next),
-        _ => editor.find(query, Find::FromStart),
-    })?;
+    let query = prompt_with(
+        editor,
+        "Search (ESC/Arrows/Enter): ",
+        |editor, query, key| match key {
+            KeyCode::Enter | KeyCode::Esc => {}
+            KeyCode::Up | KeyCode::Left => editor.find(query, Find::Prev),
+            KeyCode::Down | KeyCode::Right => editor.find(query, Find::Next),
+            _ => editor.find(query, Find::FromStart),
+        },
+    )?;
     editor.clear_matches();
     if query.is_none() {
         editor.restore_view(saved);
@@ -177,12 +194,15 @@ fn prompt_with(
     }
 }
 
+/// Number of text rows: terminal height minus the status and message bars, at least one
+/// (with fewer than 3 rows `scroll` could otherwise push the viewport past the cursor).
+fn text_height(rows: u16) -> usize {
+    (rows as usize).saturating_sub(2).max(1)
+}
+
 /// Scrolls the viewport to the current terminal size, then draws one frame.
 fn render(editor: &mut Editor) -> io::Result<()> {
     let (cols, rows) = terminal::size()?;
-    // With fewer than 3 rows (or no columns) `scroll` could push the viewport past the
-    // cursor; keep at least one row and column so `ui::draw`'s viewport invariant holds.
-    let text_height = (rows as usize).saturating_sub(2).max(1);
-    editor.scroll(text_height, (cols as usize).max(1));
+    editor.scroll(text_height(rows), (cols as usize).max(1));
     ui::draw(editor, cols, rows)
 }

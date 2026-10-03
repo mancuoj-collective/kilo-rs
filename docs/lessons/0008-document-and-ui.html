@@ -328,8 +328,8 @@ impl Editor {
         self.document.save()
     }
 
-    // move_cursor / scroll / current_line_len / current_rx 基本不变，
-    // 只是 current_line_len 和 current_rx 改成问 self.document</code></pre>
+    // move_cursor / scroll / current_line_len / current_rx are unchanged,
+    // except current_line_len and current_rx now ask self.document</code></pre>
 <p>两个私有辅助改成委托：</p>
 <pre><code class="language-rust">    /// Number of chars in the cursor's row.
     fn current_line_len(&amp;self) -&gt; usize {
@@ -603,9 +603,9 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 
 <h2>主要资料</h2>
 <ul class="ref-list">
-<li>深模块与接缝：本课程参考 <em>codebase-design</em>（删除测试、接口小实现大）；速查见
+<li>深模块与接缝：本课程参考 <code>codebase-design</code>（删除测试、接口小实现大）；速查见
   <a href="../reference/architecture.html">架构与文件结构</a>。</li>
-<li>借用冲突：<em>m03-mutability</em>；反模式（用 <code>clone</code> 绕过）：<em>m15-anti-pattern</em>。</li>
+<li>借用冲突：<code>m03-mutability</code>；反模式（用 <code>clone</code> 绕过）：<code>m15-anti-pattern</code>。</li>
 <li>对应章节：<a href="https://www.flenker.blog/hecto-chapter-5/">hecto 第 5 章</a>（其 <code>Document</code> 拆分思路）。</li>
 </ul>
 

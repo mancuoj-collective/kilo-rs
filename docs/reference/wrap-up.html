@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>参考 · 收尾修订</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>参考 · 收尾修订</h1>
+<p class="lesson-meta">kilo-rs 课程 · Reference 0004 · 11 课之后的几处「对照原版」修补</p>
+
+<p class="lede">第 1–11 课把核心功能一课一课搭起来了。之后又对照原版 <code>kilo.c</code>
+补了几处<strong>收尾修订</strong>：既修掉一个真问题，也把几处行为对齐。如果你是一路敲下来的，
+把这些补上就与仓库里的 <code>src/</code> 一致了。</p>
+
+<h2>一、控制字符不再原样输出（真问题）</h2>
+
+<p>文件里若有不可打印字节（例如 <code>\x1b</code>），旧代码会把它<strong>直接写到终端</strong>——
+ESC 会被终端当成转义序列，可能搞乱屏幕。原版把不可打印字节显示成<strong>反显</strong>的符号
+（<code>\x01</code> → <code>A</code>，其余 → <code>?</code>），且占一列。</p>
+
+<p><code>src/row.rs</code>：给渲染片段加一个 <code>control</code> 标记，并在渲染时换成符号。</p>
+
+<pre><code class="language-rust">pub struct Segment {
+    pub text: String,
+    pub highlight: Highlight,
+    pub matched: bool,
+    /// Whether this run is a non-printable char shown as a symbol.
+    pub control: bool,
+}</code></pre>
+
+<pre><code class="language-rust">// inside `render_window`, the non-tab branch:
+} else {
+    // Non-printable chars are shown as a symbol, never written to the terminal raw.
+    let control = ch.is_control();
+    let rendered = if control { control_symbol(ch) } else { ch };
+    let mut buf = [0u8; 4];
+    push_segment(
+        &amp;mut segments,
+        rendered.encode_utf8(&amp;mut buf),
+        highlight,
+        matched,
+        control,
+    );
+}</code></pre>
+
+<pre><code class="language-rust">/// Display width of `ch` starting at column `col` (tabs depend on `col`).
+fn advance(col: usize, ch: char) -&gt; usize {
+    if ch == '\t' {
+        col + (TAB_STOP - col % TAB_STOP)
+    } else {
+        col + display_width(ch)
+    }
+}
+
+/// Columns a char occupies; a non-printable char is shown as a one-column symbol.
+fn display_width(ch: char) -&gt; usize {
+    if ch.is_control() {
+        1
+    } else {
+        ch.width().unwrap_or(0)
+    }
+}
+
+/// The symbol shown for a non-printable char (`\x01` → `A`, others → `?`), like kilo.
+fn control_symbol(ch: char) -&gt; char {
+    match u32::from(ch) {
+        code @ 0..=26 =&gt; char::from(b'@' + u8::try_from(code).expect("code fits in a byte")),
+        _ =&gt; '?',
+    }
+}</code></pre>
+
+<p><code>push_segment</code> 的合并键也要带上 <code>control</code>（四个键都相同才合并）。然后
+<code>src/ui.rs</code> 里，命中或控制字符都走反显：</p>
+
+<pre><code class="language-rust">let reverse = segment.matched || segment.control;
+if reverse {
+    queue!(stdout, SetAttribute(Attribute::Reverse))?;
+}
+queue!(stdout, Print(&amp;segment.text))?;
+if reverse {
+    queue!(stdout, SetAttribute(Attribute::Reset))?;
+}</code></pre>
+
+<h2>二、保存失败不再退出程序</h2>
+
+<p>原版写盘失败时只显示 <code>Can't save! …</code> 然后<strong>继续编辑</strong>；旧代码把 I/O 错误
+抛到 <code>run</code>，整个程序就退出了。改成在消息栏报告：</p>
+
+<pre><code class="language-rust">    match editor.save() {
+        Ok(bytes) =&gt; editor.set_message(format!("{bytes} bytes written to disk")),
+        // Don't quit on a write error; report it and keep editing (kilo does the same).
+        Err(error) =&gt; editor.set_message(format!("Can't save! {error}")),
+    }
+    Ok(())</code></pre>
+
+<h2>三、补齐三个按键</h2>
+
+<p>原版还认 <kbd>PageUp</kbd>/<kbd>PageDown</kbd>（翻页）与 <kbd>Tab</kbd>（插入制表符）。
+<code>src/editor.rs</code> 加两个方法：</p>
+
+<pre><code class="language-rust">    /// Moves the cursor up one screen (kilo's `PAGE_UP`), clamping at the top.
+    pub fn page_up(&amp;mut self, rows: usize) {
+        self.cy = self.rowoff;
+        for _ in 0..rows {
+            self.move_cursor(Move::Up);
+        }
+    }
+
+    /// Moves the cursor down one screen (kilo's `PAGE_DOWN`), clamping at the last row.
+    pub fn page_down(&amp;mut self, rows: usize) {
+        self.cy = self
+            .rowoff
+            .saturating_add(rows)
+            .saturating_sub(1)
+            .min(self.document.len());
+        for _ in 0..rows {
+            self.move_cursor(Move::Down);
+        }
+    }</code></pre>
+
+<p><code>src/lib.rs</code> 的按键处理里加三条分支（翻页需要知道一屏有几行，
+所以把 <code>render</code> 里的高度计算抽成 <code>text_height</code>）：</p>
+
+<pre><code class="language-rust">// in `handle_key`:
+KeyCode::Tab =&gt; editor.insert_char('\t'),
+// …
+KeyCode::PageUp =&gt; {
+    let (_, rows) = terminal::size()?;
+    editor.page_up(text_height(rows));
+}
+KeyCode::PageDown =&gt; {
+    let (_, rows) = terminal::size()?;
+    editor.page_down(text_height(rows));
+}</code></pre>
+
+<pre><code class="language-rust">/// Number of text rows: terminal height minus the status and message bars, at least one
+/// (with fewer than 3 rows `scroll` could otherwise push the viewport past the cursor).
+fn text_height(rows: u16) -&gt; usize {
+    (rows as usize).saturating_sub(2).max(1)
+}
+
+/// Scrolls the viewport to the current terminal size, then draws one frame.
+fn render(editor: &amp;mut Editor) -&gt; io::Result&lt;()&gt; {
+    let (cols, rows) = terminal::size()?;
+    editor.scroll(text_height(rows), (cols as usize).max(1));
+    ui::draw(editor, cols, rows)
+}</code></pre>
+
+<p>顺带给查找提示补上按键说明（原版是 <code>Search: %s (Use ESC/Arrows/Enter)</code>）：</p>
+
+<pre><code class="language-rust">let query = prompt_with(editor, "Search (ESC/Arrows/Enter): ", |editor, query, key| match key {</code></pre>
+
+<h2>验收</h2>
+
+<pre><code class="language-bash">cargo test              # 34 个单元测试
+cargo clippy --all-targets -- -D warnings
+cargo fmt --check</code></pre>
+
+<p>也可以手工确认：打开含 <code>\x01</code> 的文件应显示为反显的 <code>A</code>；<kbd>Tab</kbd>
+会插入制表符；<kbd>PageDown</kbd> 让光标跳过一屏。</p>
+
+<div class="callout">
+<p><span class="tag">仍未对齐</span> 有意保留的差异记在 <code>AGENTS.md</code>（如
+<kbd>Ctrl</kbd>+<kbd>H</kbd>、状态栏文件名截断、欢迎语居中、Rust 的 <code>'x'</code>
+字符字面量不上色等）。</p>
+</div>
+
+<div class="lesson-nav">
+  <a class="prev" href="architecture.html">← 参考 · 架构与文件结构</a>
+  <a class="next" href="../lessons/0001-raw-mode-and-events.html">第 1 课 · 接管终端 →</a>
+</div>
+
+<script src="../assets/prism.min.js" defer></script>
+</body>
+</html>

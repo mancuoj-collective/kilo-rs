@@ -4,7 +4,8 @@
    装饰性的短线、左竖条、强调边框一律不用。 */
 
 /* —— 中文字体：仓耳今楷02（kami 同款），按课程用字子集化为 woff2，自托管 ——
-   授权：个人使用免费、商用需向 tsanger.cn 授权（详见仓库 README 的「许可」） */
+   授权：个人使用免费、商用需向 tsanger.cn 授权（详见仓库 README 的「许可」）。
+   注意：新增文字后需重新生成子集，否则新字回退系统字体（方法见 AGENTS.md）。 */
 @font-face {
   font-family: "TsangerJinKai02";
   src: url("fonts/TsangerJinKai02-W04.woff2") format("woff2");
@@ -81,6 +82,7 @@ a { color: var(--brand); text-decoration: none; border-bottom: 1px solid #c9d6e6
 a:hover { border-bottom-color: var(--brand); }
 
 strong, b { font-weight: 500; }
+em { font-style: normal; color: var(--brand); } /* 墨蓝做强调，不用斜体 */
 
 /* —— 代码：象牙底 + 圆角，不加边框 —— */
 code, pre, kbd { font-family: var(--mono); }

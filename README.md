@@ -1,6 +1,6 @@
 # kilo-rs
 
-用**现代 Rust** 重写 [kilo](https://github.com/antirez/kilo) 文本编辑器——一个项目驱动的学习项目，
+用**现代 Rust** 重写 [kilo](https://github.com/antirez/kilo) 文本编辑器——一门项目驱动的课程，
 从零开始，一课一个小胜利。
 
 ## 课程
@@ -23,7 +23,8 @@
 
 参考文档：[现代 Rust 惯用法](docs/reference/modern-rust-idioms.html) ·
 [架构与文件结构](docs/reference/architecture.html) ·
-[终端基础与 crossterm API](docs/reference/crossterm-terminal-basics.html)。
+[终端基础与 crossterm API](docs/reference/crossterm-terminal-basics.html) ·
+[收尾修订](docs/reference/wrap-up.html)。
 
 **部署到 GitHub Pages**：把仓库 Settings → Pages 的 Source 设为 `main` 分支的 `/docs` 目录，
 之后访问 `https://<用户名>.github.io/<仓库名>/` 即可。
@@ -46,7 +47,8 @@ src/
 ├── tui.rs      # 终端生命周期（raw mode / 备用屏幕 / panic hook）
 ├── editor.rs   # 编辑器状态：光标、视口、消息、查找
 ├── document.rs # 缓冲区（域模型）：行、增删、序列化、保存
-├── row.rs      # 一行文本 + 字符/显示列换算
+├── row.rs      # 一行文本 + 字符/显示列换算 + 渲染分段
+├── syntax.rs   # 语法高亮：规则表 + 状态机
 └── ui.rs       # 渲染：&Editor -> 终端（无状态）
 ```
 

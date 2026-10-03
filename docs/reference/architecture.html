@@ -52,7 +52,7 @@
 
 <h3>② <code>lib.rs</code> + <code>main.rs</code>：把逻辑放进库</h3>
 <p>把逻辑放在 <code>src/lib.rs</code> 及其模块里，<code>main.rs</code> 只是一个几行的二进制外壳。
-这样 <code>tests/</code> 里的集成测试可以直接 <code>use kilo::…</code> 调用你的逻辑——
+这样<strong>以后</strong>就能在 <code>tests/</code> 里写集成测试，直接 <code>use kilo::…</code> 调用你的逻辑——
 <strong>这是「二进制也能被测试」的关键一招</strong>，也是初学者最常忽略的结构优点。</p>
 
 <div class="callout">
@@ -62,13 +62,14 @@
 所以很多小 CLI 只写 <code>main.rs</code> + 模块，同样是现代做法——别 cargo-cult。</p>
 <p><strong>决策规则</strong>：需要黑盒测试 / 基准 / 复用为库 → 用 <code>lib.rs</code>；
 只需要单元测试 → <code>main.rs</code> + <code>mod</code> 就够。</p>
-<p>本项目选 <code>lib.rs</code>，是因为「编辑器核心」值得<strong>在无终端的环境下跑集成测试</strong>
-（全屏 TUI 没法用 <code>assert_cmd</code> 那样黑盒跑）。代价是 <code>main</code> 只能看到 <code>pub</code> 项，
-所以我们只暴露一个 <code>pub fn run()</code> 把接口收窄，而不是把内部函数都标 <code>pub</code>。</p>
+<p>本项目选 <code>lib.rs</code>，是为<strong>将来</strong>在无终端环境下跑集成测试留好接缝
+（全屏 TUI 没法用 <code>assert_cmd</code> 那样黑盒跑）；眼下用单元测试就够。
+对外的入口收窄为 <code>run()</code> 与 <code>tui::install_panic_hook()</code>——
+本仓库为方便按课引用与测试，模块暂时都写成 <code>pub</code>，需要收紧时再改 <code>pub(crate)</code>。</p>
 </div>
 
 <h3>③ 按领域概念分模块，可见性收紧</h3>
-<p>模块对应「概念」，不对应「层」。跨模块可见性默认用 <code>pub(crate)</code>，
+<p>模块对应「概念」，不对应「层」。<strong>原则上</strong>，跨模块可见性用 <code>pub(crate)</code>，
 只有库真正对外暴露的 API 才用 <code>pub</code>——<strong>接口的边界由可见性强制划定</strong>。</p>
 
 <p>文件命名：Rust 2018 之后用 <code>foo.rs</code> + <code>foo/</code> 目录，不要再写 <code>mod.rs</code>。</p>
@@ -81,8 +82,8 @@
     ├── main.rs        # thin: color-eyre + call into the library
     ├── lib.rs         # module declarations; the real entry point
     ├── tui.rs         # terminal lifecycle: raw mode / alt screen / cursor / panic hook
-    ├── editor.rs      # editor state: cursor, viewport scrolling, buffer contents
-    ├── document.rs    # buffer: lines, insert/delete, load/save (domain model)
+    ├── editor.rs      # editor state: cursor, viewport, message, search
+    ├── document.rs    # buffer: lines, insert/delete, serialize/save (domain model)
     ├── row.rs         # one line + render expansion (tabs, highlight spans)
     ├── ui.rs          # pure rendering: &amp;Editor -&gt; terminal (stateless)
     └── syntax.rs      # syntax highlighting rules
@@ -100,7 +101,7 @@
 <thead><tr><th>模块</th><th>接口（大致）</th><th>藏起来的实现</th></tr></thead>
 <tbody>
 <tr><td><code>tui</code></td>
-    <td><code>Terminal::enter() -&gt; io::Result&lt;Terminal&gt;</code>、<code>Drop</code>、<code>install_panic_hook()</code>、<code>size()</code></td>
+    <td><code>Terminal::enter() -&gt; io::Result&lt;Terminal&gt;</code>、<code>Drop</code>、<code>install_panic_hook()</code></td>
     <td>raw mode、备用屏幕、光标、panic 恢复</td></tr>
 <tr><td><code>document</code></td>
     <td><code>Document::new(lines, filename)</code>、<code>row(i) -&gt; Option&lt;&amp;Row&gt;</code>、
@@ -138,8 +139,8 @@
 <li><strong>第 6 课：<code>row.rs</code></strong>（已完成）。一行文本 + 「字符 ↔ 显示列」换算，为 tab 与宽字符打地基。</li>
 <li><strong>第 7–8 课：<code>document.rs</code></strong>（已完成）。
    插入、删除让「缓冲区」长出一组共享不变式的方法——它成了深模块。</li>
-<li><strong>第 9 课：<code>ui.rs</code></strong>（已完成）。
-   渲染攒够逻辑，抽成只读 <code>&amp;Editor</code> 的纯函数（状态栏 / 消息栏）。</li>
+<li><strong>第 8–9 课：<code>ui.rs</code></strong>（已完成）。第 8 课按接缝抽出只读
+   <code>&amp;Editor</code> 的渲染函数，第 9 课补上状态栏与消息栏。</li>
 <li><strong>第 10 课：查找</strong>（已完成）。没有开新模块：<code>row.rs</code> 的渲染改成<strong>分段</strong>
    （<code>Vec&lt;Segment&gt;</code>），<code>editor.rs</code> 加查找状态，<code>prompt</code> 泛化出每键回调。</li>
 <li><strong>第 11 课：<code>syntax.rs</code></strong>（已完成）。规则表 + 状态机，独立成模块，复用渲染分段。</li>
@@ -161,12 +162,12 @@
   —— 官方 CLI 书，含《Splitting your code into library and binary targets》一节，是 <code>lib.rs</code> 建议的一手来源。</li>
 <li><code>cargo</code> 自身：<code>src/bin/cargo/main.rs</code> 是薄 bin，<code>use cargo::…</code>，逻辑全在库里。</li>
 <li>A Philosophy of Software Design（Ousterhout）—— 深模块与复杂度。本课程取「深度＝杠杆」的解释。</li>
-<li><a href="https://martinfowler.com/bliki/FlagArgument.html">Rule of Three / 错误抽象</a> —— 见 Apollo 手册 §1.8。</li>
+<li><a href="https://en.wikipedia.org/wiki/Rule_of_three_(computer_programming)">Rule of Three</a> —— 见 Apollo 手册 §1.8。</li>
 </ul>
 
 <div class="lesson-nav">
   <a class="prev" href="modern-rust-idioms.html">← 参考 · 现代 Rust 惯用法</a>
-  <a class="next" href="../lessons/0001-raw-mode-and-events.html">第 1 课 · 接管终端 →</a>
+  <a class="next" href="wrap-up.html">参考 · 收尾修订 →</a>
 </div>
 
 <script src="../assets/prism.min.js" defer></script>

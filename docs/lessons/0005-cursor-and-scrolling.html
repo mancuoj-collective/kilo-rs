@@ -460,8 +460,8 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 <div class="callout">
 <p><code>#[must_use]</code> 到底什么时候该加、为什么 <code>Move</code> 需要 <code>Copy</code>、
 <code>scroll</code> 的公式怎么推、为什么要写单元测试而不是手动试……任何卡住的地方直接问。
-下一课开始真正<strong>编辑</strong>：插入字符、回车换行、退格删除——那时 <code>Editor</code>
-会长出修改缓冲区的方法，也是借用检查器开始上强度的地方。</p>
+下一课先补一个坑：光标按「字符」走、画面却按「列」画——引入 <code>Row</code>，
+把 tab 展开与宽字符（一个汉字占两列）处理好，否则光标会错位。</p>
 </div>
 
 <div class="lesson-nav">

@@ -79,11 +79,12 @@ fn draw_segment(stdout: &mut io::Stdout, segment: &Segment) -> io::Result<()> {
     if let Some(color) = color {
         queue!(stdout, SetForegroundColor(color))?;
     }
-    if segment.matched {
+    let reverse = segment.matched || segment.control;
+    if reverse {
         queue!(stdout, SetAttribute(Attribute::Reverse))?;
     }
     queue!(stdout, Print(&segment.text))?;
-    if segment.matched {
+    if reverse {
         queue!(stdout, SetAttribute(Attribute::Reset))?;
     }
     if color.is_some() {

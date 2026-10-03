@@ -28,6 +28,8 @@ pub struct Segment {
     pub highlight: Highlight,
     /// Whether this run is part of the current search match.
     pub matched: bool,
+    /// Whether this run is a non-printable char shown as a symbol.
+    pub control: bool,
 }
 
 /// A single line of text.
@@ -175,10 +177,25 @@ impl Row {
                 // Expand tabs to spaces; pad a wide char straddling the edge with spaces.
                 let from = start.max(coloff);
                 let to = col.min(end);
-                push_segment(&mut segments, &" ".repeat(to - from), highlight, matched);
+                push_segment(
+                    &mut segments,
+                    &" ".repeat(to - from),
+                    highlight,
+                    matched,
+                    false,
+                );
             } else {
+                // Non-printable chars are shown as a symbol, never written to the terminal raw.
+                let control = ch.is_control();
+                let rendered = if control { control_symbol(ch) } else { ch };
                 let mut buf = [0u8; 4];
-                push_segment(&mut segments, ch.encode_utf8(&mut buf), highlight, matched);
+                push_segment(
+                    &mut segments,
+                    rendered.encode_utf8(&mut buf),
+                    highlight,
+                    matched,
+                    control,
+                );
             }
         }
 
@@ -225,19 +242,30 @@ impl Row {
     }
 }
 
-/// Appends `text` to `segments`, merging it into the previous run when both style keys agree.
-fn push_segment(segments: &mut Vec<Segment>, text: &str, highlight: Highlight, matched: bool) {
+/// Appends `text` to `segments`, merging it into the previous run when all style keys agree.
+fn push_segment(
+    segments: &mut Vec<Segment>,
+    text: &str,
+    highlight: Highlight,
+    matched: bool,
+    control: bool,
+) {
     if text.is_empty() {
         return;
     }
     match segments.last_mut() {
-        Some(last) if last.highlight == highlight && last.matched == matched => {
+        Some(last)
+            if last.highlight == highlight
+                && last.matched == matched
+                && last.control == control =>
+        {
             last.text.push_str(text);
         }
         _ => segments.push(Segment {
             text: text.to_owned(),
             highlight,
             matched,
+            control,
         }),
     }
 }
@@ -247,7 +275,24 @@ fn advance(col: usize, ch: char) -> usize {
     if ch == '\t' {
         col + (TAB_STOP - col % TAB_STOP)
     } else {
-        col + ch.width().unwrap_or(0)
+        col + display_width(ch)
+    }
+}
+
+/// Columns a char occupies; a non-printable char is shown as a one-column symbol.
+fn display_width(ch: char) -> usize {
+    if ch.is_control() {
+        1
+    } else {
+        ch.width().unwrap_or(0)
+    }
+}
+
+/// The symbol shown for a non-printable char (`\x01` → `A`, others → `?`), like kilo.
+fn control_symbol(ch: char) -> char {
+    match u32::from(ch) {
+        code @ 0..=26 => char::from(b'@' + u8::try_from(code).expect("code fits in a byte")),
+        _ => '?',
     }
 }
 
@@ -322,6 +367,19 @@ mod tests {
         assert_eq!(segments[0].highlight, Highlight::Keyword2);
         assert_eq!(segments[1].text, " x");
         assert_eq!(segments[1].highlight, Highlight::Normal);
+    }
+
+    #[test]
+    fn control_chars_are_shown_as_symbols() {
+        let row = Row::new("a\x01b");
+        assert_eq!(row.width(), 3); // the control char takes one column
+        let segments = row.render_window(0, 3);
+        assert!(segments.iter().any(|segment| segment.control));
+        let text: String = segments
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect();
+        assert_eq!(text, "aAb"); // \x01 renders as 'A'
     }
 
     #[test]

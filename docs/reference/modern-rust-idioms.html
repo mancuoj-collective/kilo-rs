@@ -43,14 +43,14 @@ use crate::document::Document;</code></pre>
 </tbody>
 </table>
 
-<pre><code class="language-rust">// ❌ awkward
+<pre><code class="language-rust">// awkward
 if let Some(row) = self.row(idx) {
     process(row);
 } else {
     return;
 }
 
-// ✅ modern
+// modern
 let Some(row) = self.row(idx) else {
     return;
 };
@@ -103,7 +103,7 @@ impl Drop for RawModeGuard {
 <h2>4. 错误处理</h2>
 
 <ul>
-<li>能返回 <code>Result</code> 就不要 panic；不要在生产代码里 <code>unwrap()</code>/<code>expect()</code>。</li>
+<li>能返回 <code>Result</code> 就不要 panic；生产代码里不要 <code>unwrap()</code>；确实不可能失败时用带原因的 <code>expect("…")</code>。</li>
 <li>用 <code>?</code> 传播错误，而不是 <code>match</code> 层层手写。</li>
 <li><strong>二进制</strong>用 <code>eyre</code>（本项目是 <code>color-eyre</code>）或 <code>anyhow</code>；
   <strong>库</strong>用 <code>thiserror</code> 定义精确错误类型。</li>
@@ -145,13 +145,17 @@ impl Drop for RawModeGuard {
 <tr><td><code>once_cell::Lazy</code></td><td><code>std::sync::LazyLock</code>（1.80+）</td></tr>
 <tr><td><code>unwrap()</code> 用于「不可能失败」</td><td>优先 <code>?</code>；确实不可能失败时 <code>expect("reason")</code></td></tr>
 <tr><td><code>.map_or(false, |v| …)</code> / <code>matches!(…)</code></td><td><code>.is_some_and(…)</code> / <code>.is_ok_and(…)</code>（1.70+）——「有值且满足谓词」</td></tr>
+<tr><td><code>.map_or(true, |v| …)</code></td><td><code>.is_none_or(…)</code>（1.82+）——「无值，或满足谓词」</td></tr>
+<tr><td><code>if cond { Some(x) } else { None }</code></td><td><code>cond.then_some(x)</code>——把布尔条件变成 <code>Option</code></td></tr>
 <tr><td><code>.clone()</code> 绕过借用检查</td><td>先想清楚所有权，尽量用 <code>&amp;T</code> / <code>&amp;str</code> / <code>&amp;[T]</code></td></tr>
 </tbody>
 </table>
 
 <h3>字符串转换：<code>to_owned</code> / <code>from</code> / <code>to_string</code></h3>
 
-<p>对 <code>&amp;str → String</code>，三者<strong>结果和性能完全一样</strong>，区别在来源与语义：</p>
+<p>对 <code>&amp;str → String</code>，三者<strong>结果相同</strong>；对 <code>&amp;str</code> 首选
+<code>to_owned</code> / <code>String::from</code>（<code>to_string</code> 走 <code>Display</code> 格式化）。
+区别在来源与语义：</p>
 
 <table>
 <thead><tr><th>写法</th><th>来源</th><th>该用在哪</th></tr></thead>

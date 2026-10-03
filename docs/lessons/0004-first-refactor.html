@@ -279,8 +279,8 @@ cargo clippy --all-targets -- -D warnings</code></pre>
 
 <ol>
 <li><strong>编辑功能到来 → <code>document.rs</code> + <code>row.rs</code></strong>（缓冲区会形成深模块）。</li>
-<li><strong>光标与滚动 → <code>app.rs</code></strong>（cx/cy/rowoff/coloff/dirty 攒进一个结构）。</li>
-<li><strong>状态栏 → <code>ui.rs</code></strong>（渲染抽成只读 <code>&amp;App</code> 的函数）。</li>
+<li><strong>光标与滚动 → <code>editor.rs</code></strong>（cx/cy/rowoff/coloff 攒进一个结构）。</li>
+<li><strong>状态栏 → <code>ui.rs</code></strong>（渲染抽成只读 <code>&amp;Editor</code> 的函数）。</li>
 <li><strong>语法高亮 → <code>syntax.rs</code></strong>。</li>
 </ol>
 
